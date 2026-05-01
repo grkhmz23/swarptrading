@@ -1,0 +1,142 @@
+'use client';
+
+import React, { useState } from 'react';
+import Image from 'next/image';
+import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
+import { useT } from '@/i18n/I18nProvider';
+import { LanguageSelector } from '../ui/LanguageSelector';
+
+interface SetPasscodeProps {
+  onBack?: () => void;
+  onComplete?: (passcode: string) => void;
+}
+
+export const SetPasscode: React.FC<SetPasscodeProps> = ({
+  onComplete
+}) => {
+  const t = useT();
+  const [passcode, setPasscode] = useState(['', '', '', '', '', '']);
+
+  const handleCodeChange = (index: number, value: string) => {
+    if (value.length > 1) return;
+    
+    // Only allow digits
+    if (value && !/^\d$/.test(value)) return;
+    
+    const newCode = [...passcode];
+    newCode[index] = value;
+    setPasscode(newCode);
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      const nextInput = document.querySelector(`input[data-index="${index + 1}"]`) as HTMLInputElement;
+      if (nextInput) nextInput.focus();
+    }
+
+    // Auto-submit when all 6 digits are entered
+    if (value && index === 5) {
+      const isComplete = newCode.every(digit => digit !== '');
+      if (isComplete && onComplete) {
+        setTimeout(() => {
+          onComplete(newCode.join(''));
+        }, 100);
+      }
+    }
+  };
+
+  const handleBackspace = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace' && !passcode[index] && index > 0) {
+      const prevInput = document.querySelector(`input[data-index="${index - 1}"]`) as HTMLInputElement;
+      if (prevInput) prevInput.focus();
+    }
+  };
+
+
+  return (
+    <div 
+      className='w-full h-screen overflow-hidden !p-8 relative bg-[#090A11]'
+    >
+      {/* Animated Gradient Background */}
+      <AnimatedGradientBackground />
+      <div className='flex flex-col h-full relative z-10'>
+        {/* Language Selector at Top */}
+        <div className='flex justify-center py-4'>
+          <LanguageSelector />
+        </div>
+
+        {/* Main Content - Vertically Centered */}
+        <div className='flex-1 flex flex-col justify-center items-center'>
+          <div className='w-full max-w-[358px] text-center flex flex-col items-center gap-7'>
+            
+            {/* Wallet Security Icon */}
+            <div className='w-14 h-14 flex items-center justify-center  rounded-full'>
+              <Image 
+                src="/wallet-security-icon.svg" 
+                alt="Wallet Security" 
+                width={52} 
+                height={51}
+                className="object-contain"
+              />
+            </div>
+            
+            {/* Title and Description */}
+            <div className='flex flex-col gap-2'>
+              <h1 className='text-2xl text-white font-bold'>
+                {t.onboarding?.setPasscode?.title || 'Set a passcode'}
+              </h1>
+              <p className='text-[#636466] text-sm text-center'>
+                {t.onboarding?.setPasscode?.subtitle || 'This 6-digit passcode keeps your wallet and payments secure.'}
+              </p>
+            </div>
+            
+            {/* Passcode Input Fields */}
+            <div className='flex gap-3 justify-center w-full'>
+              {passcode.map((digit, index) => (
+                <input
+                  key={index}
+                  data-index={index}
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleCodeChange(index, e.target.value)}
+                  onKeyDown={(e) => handleBackspace(index, e)}
+                  className='w-12 h-12 text-center text-white text-xl font-semibold bg-[#131519] border border-[#2B2D30] rounded-xl focus:outline-none focus:border-[#40E0D0] transition-colors'
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Section - Terms */}
+          <div className='flex flex-col gap-2 justify-center items-center pb-4'>
+          <div className='flex flex-col gap-4 justify-center items-center mt-4'>
+            <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
+            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
+              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
+              <a
+                href="https://www.swarpfoundation.com/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
+              >
+                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
+              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
+              <a
+                href="https://www.swarpfoundation.com/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
+              >
+                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
+              </a>.
+            </p>
+            
+            
+         
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
