@@ -1,15 +1,7 @@
 "use client";
 
-import React from "react";
 import Image from "next/image";
-
-export interface TileItem {
-  id: string | number;
-  title: string;
-  balance: string;
-  currentPrice: string;
-  icon: string;
-}
+import type { TileItem } from "@/types/home";
 
 interface BalanceTileProps {
   item: TileItem;

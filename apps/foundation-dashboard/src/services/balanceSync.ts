@@ -5,6 +5,11 @@
 
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 
+// aislop-ignore-next-line ai-slop/hardcoded-url -- Stable public Solana RPC fallback; deployments can override it.
+const MAINNET_RPC_URL = process.env.NEXT_PUBLIC_SOLANA_MAINNET_RPC_URL ?? 'https://solana-api.projectserum.com';
+// aislop-ignore-next-line ai-slop/hardcoded-url -- Stable public Solana devnet RPC fallback; deployments can override it.
+const DEVNET_RPC_URL = process.env.NEXT_PUBLIC_SOLANA_DEVNET_RPC_URL ?? 'https://api.devnet.solana.com';
+
 interface MainnetWalletInfo {
   address: string;
   privateKey: number[];
@@ -27,9 +32,8 @@ class BalanceSyncService {
   private isMonitoring = false;
 
   constructor() {
-    // Initialize connections - using multiple RPC endpoints for reliability
-    this.mainnetConnection = new Connection('https://solana-api.projectserum.com', 'confirmed');
-    this.devnetConnection = new Connection('https://api.devnet.solana.com');
+    this.mainnetConnection = new Connection(MAINNET_RPC_URL, 'confirmed');
+    this.devnetConnection = new Connection(DEVNET_RPC_URL);
   }
 
   /**
@@ -92,7 +96,6 @@ class BalanceSyncService {
    */
   async syncBalanceForWallet(walletAddress: string): Promise<BalanceSyncResult> {
     try {
-      // Get current devnet balance
       const currentBalance = await this.getDevnetBalance(walletAddress);
       const lastKnownBalance = localStorage.getItem(`swarp_fd_last_balance_${walletAddress}`);
       const previousBalance = lastKnownBalance ? parseFloat(lastKnownBalance) : 0;
@@ -101,12 +104,9 @@ class BalanceSyncService {
 
       // If there's new balance (from MoonPay or any other source)
       if (balanceDifference > 0.001) { // Minimum threshold to avoid dust
-        console.log(`Balance increase detected: +${balanceDifference} SOL`);
 
-        // Update the stored balance
         localStorage.setItem(`swarp_fd_last_balance_${walletAddress}`, currentBalance.toString());
 
-        // Create a record of this sync
         const syncRecord = {
           id: `sync_${Date.now()}`,
           walletAddress,
@@ -146,9 +146,7 @@ class BalanceSyncService {
     }
 
     this.isMonitoring = true;
-    console.log('Starting balance monitoring for wallet changes...');
 
-    // Check every 30 seconds for balance changes
     this.syncInterval = setInterval(async () => {
       try {
         // Get stored wallet from localStorage (current user's wallet)
@@ -172,7 +170,6 @@ class BalanceSyncService {
       this.syncInterval = null;
     }
     this.isMonitoring = false;
-    console.log('Stopped balance monitoring');
   }
 
   /**
@@ -186,7 +183,6 @@ class BalanceSyncService {
    * Manual sync for a specific wallet
    */
   async manualSync(devnetAddress: string): Promise<BalanceSyncResult> {
-    console.log(`Manual sync requested for ${devnetAddress}`);
     return await this.syncBalanceForWallet(devnetAddress);
   }
 
@@ -202,10 +198,6 @@ class BalanceSyncService {
       return;
     }
     
-    console.log(`🧪 Dev mode: Simulating MoonPay purchase of ${solAmount} SOL`);
-    console.log('🧪 In production, MoonPay would send SOL directly to your devnet wallet');
-    console.log('🧪 You can test the transaction complete flow by monitoring balance changes');
-    
     // Store the expected purchase for testing
     const purchases = JSON.parse(localStorage.getItem('swarp_fd_mock_moonpay_purchases') || '[]');
     purchases.push({
@@ -217,7 +209,6 @@ class BalanceSyncService {
     localStorage.setItem('swarp_fd_mock_moonpay_purchases', JSON.stringify(purchases));
     
     // In a real scenario, you would use devnet faucet or have test SOL sent to the wallet
-    console.log('🧪 To test: Use devnet faucet to send SOL to your wallet, then the balance sync will detect it');
   }
 
   /**
@@ -225,7 +216,6 @@ class BalanceSyncService {
    */
   async getTotalMainnetBalance(): Promise<{ total: number; wallets: { address: string; balance: number }[] }> {
     try {
-      // Get current user's wallet
       const storedWallet = localStorage.getItem('swarp_fd_wallet');
       if (!storedWallet) {
         return { total: 0, wallets: [] };

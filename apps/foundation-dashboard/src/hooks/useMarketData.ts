@@ -46,7 +46,7 @@ export const useMarketData = (): UseMarketDataReturn => {
       };
 
       setMarketData(fallbackData);
-      console.log('Using fallback market data due to API error');
+      console.error('Using fallback market data due to API error');
     } finally {
       setPriceLoading(false);
     }
@@ -106,16 +106,14 @@ export const useMarketData = (): UseMarketDataReturn => {
       }
 
       setChartData(mockData);
-      console.log('Using fallback chart data due to API error');
+      console.error('Using fallback chart data due to API error');
     }
   }, [selectedPeriod]);
 
-  // Load market data on mount
   useEffect(() => {
     loadMarketData();
     loadChartData();
 
-    // Set up interval for real-time price updates
     const interval = setInterval(() => {
       loadMarketData();
     }, 30000); // Update every 30 seconds

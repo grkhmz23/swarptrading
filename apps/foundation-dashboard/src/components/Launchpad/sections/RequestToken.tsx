@@ -62,14 +62,12 @@ export default function RequestToken() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
       const validTypes = ["image/jpeg", "image/png", "image/svg+xml", "image/gif", "video/mp4"];
       if (!validTypes.includes(file.type)) {
         showToast("error", t.launchpad?.requestToken?.errors?.invalidImageFile || "Please upload a valid image file (JPG, PNG, SVG, GIF, or MP4)");
         return;
       }
 
-      // Create preview
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData((prev) => ({
@@ -143,7 +141,6 @@ export default function RequestToken() {
   };
 
   const handleSubmit = async () => {
-    // Validate required fields
     if (!formData.name.trim()) {
       showToast("error", t.launchpad?.requestToken?.errors?.enterTokenName || "Please enter a token name");
       return;
@@ -153,7 +150,6 @@ export default function RequestToken() {
       return;
     }
 
-    // Get auth token from localStorage
     const token = localStorage.getItem("swarp_fd_access_token");
     if (!token) {
       showToast("error", t.launchpad?.requestToken?.errors?.loginRequired || "Please log in to create a token");
@@ -163,7 +159,6 @@ export default function RequestToken() {
     setIsSubmitting(true);
 
     try {
-      // Step 1: Upload image first if provided
       let imageUrl: string | undefined;
       if (formData.image) {
         try {
@@ -181,8 +176,6 @@ export default function RequestToken() {
         }
       }
 
-      // Step 2: Prepare custodial token creation request
-      // No wallet address needed - the backend will use the user's Swarp Foundation wallet
       const custodialData: LaunchpadCustodialCreateRequest = {
         name: formData.name.trim(),
         ticker: formData.ticker.trim().toUpperCase(),
@@ -195,10 +188,7 @@ export default function RequestToken() {
         discordUrl: formData.discordUrl.trim() || undefined,
       };
 
-      // Step 3: Create token using custodial API (server signs automatically)
       const response = await apiService.createLaunchpadTokenCustodial(custodialData, token);
-
-      console.log("Token created on Solana:", response);
 
       // Show success modal instead of alert
       setSuccessModal({

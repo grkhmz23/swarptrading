@@ -33,7 +33,7 @@ export const GenericDelete: React.FC<GenericDeleteProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const { list } = useNavigation();
-  const { mutate: deleteRecord, isLoading } = useDelete();
+  const { mutate: deleteRecord, mutation: { isPending: isLoading } } = useDelete();
 
   const handleDelete = () => {
     deleteRecord(

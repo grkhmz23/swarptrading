@@ -33,7 +33,6 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [translations, setTranslations] = useState<TranslationKeys>(emptyTranslations);
   const [isLoading, setIsLoading] = useState(true); // Start as loading
 
-  // Fetch translations from backend
   useEffect(() => {
     const fetchTranslations = async () => {
       // Check cache first - but only if version matches

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
 
@@ -116,7 +116,6 @@ export default function TradeHistory() {
   const tokenDropdownRef = useRef<HTMLDivElement>(null);
   const typeDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch trade history from API
   const fetchTradeHistory = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -126,7 +125,6 @@ export default function TradeHistory() {
         return;
       }
 
-      // Build query params based on type filter
       const params: { page?: number; limit?: number; type?: 'buy' | 'sell' } = { limit: 50 };
       if (typeFilter && typeFilter !== "All") {
         params.type = typeFilter.toLowerCase() as 'buy' | 'sell';
@@ -162,7 +160,6 @@ export default function TradeHistory() {
     fetchTradeHistory();
   }, [fetchTradeHistory]);
 
-  // Handle click outside to close dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -185,7 +182,6 @@ export default function TradeHistory() {
     };
   }, [openDropdown]);
 
-  // Get unique token names for the token filter dropdown
   const tokenOptions = useMemo(() => {
     const uniqueTokens = [...new Set(transactions.map(t => t.tokenName))];
     return ["All", ...uniqueTokens];
@@ -237,7 +233,6 @@ export default function TradeHistory() {
     setOpenDropdown(openDropdown === dropdown ? null : dropdown);
   };
 
-  // Get status badge styles
   const getStatusStyles = (status: TransactionStatus) => {
     switch (status) {
       case "Completed":
@@ -258,7 +253,6 @@ export default function TradeHistory() {
     }
   };
 
-  // Get amount display styles
   const getAmountStyles = (type: TransactionType) => {
     return type === "Buy" ? "#27AE60" : "#EB5757";
   };

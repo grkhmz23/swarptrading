@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 
 interface TradeModalProps {
   isOpen: boolean;
@@ -119,9 +119,7 @@ export default function TradeModal({ isOpen, onClose, token }: TradeModalProps) 
             {/* View Transaction Link */}
             <button
               className="flex items-center !gap-1 !mb-8 hover:opacity-80 transition-opacity"
-              onClick={() => {
-                console.log("View transaction:", transactionId);
-              }}
+              onClick={() => void navigator.clipboard.writeText(transactionId)}
             >
               <span
                 style={{

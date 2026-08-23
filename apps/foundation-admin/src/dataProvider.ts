@@ -20,7 +20,6 @@ axiosInstance.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 errors
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -51,13 +50,13 @@ export const dataProvider: DataProvider = {
     const params = new URLSearchParams();
 
     if (pagination) {
-      params.append("page", String(pagination.current));
+      params.append("page", String(pagination.currentPage));
       params.append("limit", String(pagination.pageSize));
     }
 
     if (filters && filters.length > 0) {
-      filters.forEach((filter: any) => {
-        if (filter.field === "search" && filter.value) {
+      filters.forEach((filter) => {
+        if ("field" in filter && filter.field === "search" && filter.value) {
           params.append("search", filter.value);
         }
       });
@@ -101,9 +100,9 @@ export const dataProvider: DataProvider = {
 
   deleteOne: async ({ resource, id }) => {
     const url = getApiEndpoint(resource, id);
-    await axiosInstance.delete(url);
+    const response = await axiosInstance.delete(url);
     return {
-      data: { id } as unknown as any,
+      data: response.data,
     };
   },
 

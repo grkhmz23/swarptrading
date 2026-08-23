@@ -15,6 +15,14 @@ export interface HomeScreenProps {
   onLogout?: () => void;
 }
 
+export interface TileItem {
+  id: string | number;
+  title: string;
+  balance: string;
+  currentPrice: string;
+  icon: string;
+}
+
 export interface MarketData {
   symbol: string;
   price: number;

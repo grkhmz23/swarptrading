@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { CreatingWallet } from '@/components/onboarding/CreatingWallet';
 import { useRouter } from 'next/navigation';
 

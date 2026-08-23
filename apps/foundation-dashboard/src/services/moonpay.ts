@@ -33,6 +33,19 @@ export interface MoonPayWidgetInstance {
   destroy: () => void;
 }
 
+const MOONPAY_URLS = {
+  // aislop-ignore-next-line ai-slop/hardcoded-url -- Stable MoonPay SDK origin.
+  sdk: 'https://static.moonpay.com/web-sdk/v1/moonpay-web-sdk.min.js',
+  // aislop-ignore-next-line ai-slop/hardcoded-url -- Stable MoonPay production buy origin.
+  buy: 'https://buy.moonpay.com',
+  // aislop-ignore-next-line ai-slop/hardcoded-url -- Stable MoonPay sandbox buy origin.
+  buySandbox: 'https://buy-sandbox.moonpay.com',
+  // aislop-ignore-next-line ai-slop/hardcoded-url -- Stable MoonPay production sell origin.
+  sell: 'https://sell.moonpay.com',
+  // aislop-ignore-next-line ai-slop/hardcoded-url -- Stable MoonPay sandbox sell origin.
+  sellSandbox: 'https://sell-sandbox.moonpay.com',
+} as const;
+
 declare global {
   interface Window {
     MoonPayWebSdk: {
@@ -57,7 +70,7 @@ class MoonPayService {
 
     this.loadingPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://static.moonpay.com/web-sdk/v1/moonpay-web-sdk.min.js';
+      script.src = MOONPAY_URLS.sdk;
       script.async = true;
       script.onload = () => {
         this.sdkLoaded = true;
@@ -167,13 +180,11 @@ class MoonPayService {
     
     if (environment === 'sandbox') {
       // Use devnet address directly with MoonPay sandbox
-      console.log(`Using devnet wallet directly with MoonPay sandbox: ${devnetWalletAddress}`);
       return devnetWalletAddress;
     }
     
     // For production, you would typically use mainnet addresses
     // But for now, we'll still use devnet for consistency
-    console.log(`Using devnet wallet address: ${devnetWalletAddress}`);
     return devnetWalletAddress;
   }
 
@@ -220,7 +231,7 @@ class MoonPayService {
       // Add postMessage listener for MoonPay events
       if (options.onEventCallback) {
         const messageHandler = (event: MessageEvent) => {
-          if (event.origin === 'https://buy.moonpay.com' || event.origin === 'https://buy-sandbox.moonpay.com') {
+          if (event.origin === MOONPAY_URLS.buy || event.origin === MOONPAY_URLS.buySandbox) {
             options.onEventCallback?.(event.data);
           }
         };
@@ -236,7 +247,6 @@ class MoonPayService {
         setTimeout(cleanup, 30 * 60 * 1000); // Clean up after 30 minutes
       }
 
-      // Return mock widget interface
       return {
         show: () => {
           if (popup) {
@@ -248,9 +258,7 @@ class MoonPayService {
             popup.close();
           }
         },
-        updateConfig: () => {
-          console.log('updateConfig not supported with URL-based approach');
-        },
+        updateConfig: () => undefined,
         destroy: () => {
           if (popup) {
             popup.close();
@@ -294,7 +302,7 @@ class MoonPayService {
       // Add postMessage listener for MoonPay events
       if (options.onEventCallback) {
         const messageHandler = (event: MessageEvent) => {
-          if (event.origin === 'https://sell.moonpay.com' || event.origin === 'https://sell-sandbox.moonpay.com') {
+          if (event.origin === MOONPAY_URLS.sell || event.origin === MOONPAY_URLS.sellSandbox) {
             options.onEventCallback?.(event.data);
           }
         };
@@ -310,7 +318,6 @@ class MoonPayService {
         setTimeout(cleanup, 30 * 60 * 1000); // Clean up after 30 minutes
       }
 
-      // Return mock widget interface
       return {
         show: () => {
           if (popup) {
@@ -322,9 +329,7 @@ class MoonPayService {
             popup.close();
           }
         },
-        updateConfig: () => {
-          console.log('updateConfig not supported with URL-based approach');
-        },
+        updateConfig: () => undefined,
         destroy: () => {
           if (popup) {
             popup.close();
@@ -353,8 +358,8 @@ class MoonPayService {
     const config = this.createBuyConfig(options);
     const environment = this.getEnvironment();
     const baseUrl = environment === 'sandbox' 
-      ? 'https://buy-sandbox.moonpay.com'
-      : 'https://buy.moonpay.com';
+      ? MOONPAY_URLS.buySandbox
+      : MOONPAY_URLS.buy;
 
     const params = new URLSearchParams();
     params.append('apiKey', config.apiKey);
@@ -396,7 +401,6 @@ class MoonPayService {
     params.append('skipUnsupportedRegion', 'false'); // Show all options even if region not fully supported
 
     const finalUrl = `${baseUrl}?${params.toString()}`;
-    console.log('Generated MoonPay Buy URL:', finalUrl);
     return finalUrl;
   }
 
@@ -415,8 +419,8 @@ class MoonPayService {
     const config = this.createSellConfig(options);
     const environment = this.getEnvironment();
     const baseUrl = environment === 'sandbox'
-      ? 'https://sell-sandbox.moonpay.com'
-      : 'https://sell.moonpay.com';
+      ? MOONPAY_URLS.sellSandbox
+      : MOONPAY_URLS.sell;
 
     const params = new URLSearchParams();
     params.append('apiKey', config.apiKey);
@@ -452,22 +456,17 @@ class MoonPayService {
     const eventData = event as { type?: string; data?: unknown };
     switch (eventData.type) {
       case 'transaction_created':
-        console.log('MoonPay transaction created:', eventData.data);
         break;
       case 'transaction_completed':
-        console.log('MoonPay transaction completed:', eventData.data);
         break;
       case 'transaction_failed':
         console.error('MoonPay transaction failed:', eventData.data);
         break;
       case 'widget_closed':
-        console.log('MoonPay widget closed');
         break;
       case 'kyc_completed':
-        console.log('MoonPay KYC completed:', eventData.data);
         break;
       default:
-        console.log('MoonPay widget event:', event);
     }
   }
 }

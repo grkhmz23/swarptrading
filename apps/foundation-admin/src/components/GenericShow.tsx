@@ -28,13 +28,11 @@ export const GenericShow: React.FC<GenericShowProps> = ({
   const navigate = useNavigate();
   const { id } = useParams();
   
-  const { queryResult } = useShow({ 
+  const { query, result: record } = useShow({
     resource,
     id: id,
   });
-  const { data, isLoading, error } = queryResult;
-
-  const record = data?.data;
+  const { isLoading, error } = query;
 
   if (isLoading) {
     return (

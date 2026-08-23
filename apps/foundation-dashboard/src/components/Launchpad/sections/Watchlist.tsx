@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import AddAssetModal from "../AddAssetModal";
 import { apiService, LaunchpadProject } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
@@ -45,7 +45,6 @@ export default function Watchlist() {
   const [error, setError] = useState<string | null>(null);
   const [isAddAssetModalOpen, setIsAddAssetModalOpen] = useState(false);
 
-  // Fetch watchlist from API
   const fetchWatchlist = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -82,12 +81,10 @@ export default function Watchlist() {
     setIsAddAssetModalOpen(false);
   };
 
-  // Handle save from add asset modal - refresh watchlist
   const handleSaveAssets = () => {
     fetchWatchlist();
   };
 
-  // Remove from watchlist
   const handleRemoveFromWatchlist = async (projectId: string) => {
     try {
       const token = localStorage.getItem("swarp_fd_access_token");
@@ -101,13 +98,11 @@ export default function Watchlist() {
     }
   };
 
-  // Parse price change to number
   const parsePriceChange = (change: string | number | undefined): number => {
     if (change === undefined || change === null) return 0;
     return typeof change === 'string' ? parseFloat(change) || 0 : change;
   };
 
-  // Get change color
   const getChangeColor = (change: number) => {
     return change >= 0 ? "#27AE60" : "#EB5757";
   };

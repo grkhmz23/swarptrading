@@ -189,7 +189,6 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
       return;
     }
 
-    // Validate format first
     const formatValidation = validateUsernameFormat(usernameToSubmit);
     if (!formatValidation.isValid) {
       setError(formatValidation.message);

@@ -13,6 +13,7 @@ import { CreatingWallet } from './CreatingWallet';
 import { SetPasscode } from './SetPasscode';
 import { ConfirmPasscode } from './ConfirmPasscode';
 import { EnterPasscode } from './EnterPasscode';
+import ReferralCodeModal from './ReferralCodeModal';
 
 type OnboardingStep = 'splash' | 'welcome' | 'signup-options' | 'signup-email' | 'verify-phone' | 'select-citizenship' | 'email-setup' | 'profile-setup' | 'profile-photo' | 'creating-wallet' | 'set-passcode' | 'confirm-passcode' | 'enter-passcode';
 
@@ -43,10 +44,8 @@ interface OnboardingFlowProps {
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
   // const router = useRouter(); // Not used currently
 
-  // Initialize with restored state or default
   const getInitialStep = (): OnboardingStep => {
     if (typeof window !== 'undefined') {
-      // Get all localStorage values
       const savedStep = localStorage.getItem('swarp_fd_onboarding_step') as OnboardingStep;
       const token = localStorage.getItem('swarp_fd_access_token');
       const wallet = localStorage.getItem('swarp_fd_wallet');
@@ -58,16 +57,15 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
         }
       }
     } 
-    console.log('🏁 Using default: signup-email');
     return 'signup-email';
   };
 
   const [currentStep, setCurrentStep] = useState<OnboardingStep>(getInitialStep());
   const [passcode, setPasscode] = useState('');
+  const [isReferralCodeOpen, setIsReferralCodeOpen] = useState(false);
 
   // Save current step to localStorage only for passcode steps (to prevent bypass)
   useEffect(() => {
-    console.log('📍 Step changed to:', currentStep);
     if (typeof window !== 'undefined') {
       if (currentStep === 'set-passcode' || currentStep === 'confirm-passcode' || currentStep === 'enter-passcode') {
         localStorage.setItem('swarp_fd_onboarding_step', currentStep);
@@ -79,7 +77,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
     }
   }, [currentStep]);
 
-  // Handle browser back button for passcode screens
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       // If we're on a passcode screen and user tries to go back, prevent it
@@ -101,9 +98,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
     }
   }, [currentStep]);
 
-
-  const handleEmailContinue = (phoneNumber: string) => {
-    console.log('Phone Sign Up:', { phoneNumber });
+  const handleEmailContinue = (_phoneNumber: string) => {
     setCurrentStep('verify-phone');
   };
 
@@ -166,7 +161,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   };
 
   const handleCitizenshipComplete = (country: string) => {
-    console.log('Citizenship selected:', country);
     // Persist selected country to the pending profile data so later screens
     // (profile-setup / profile-photo) can read it.
     const existingData = localStorage.getItem('swarp_fd_pending_profile');
@@ -186,7 +180,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   };
 
   const handleEmailSetupComplete = (emailData: { email: string }) => {
-    console.log('Email setup completed:', emailData);
     // Merge with existing pending profile data
     const existingData = localStorage.getItem('swarp_fd_pending_profile');
     const mergedData: PendingProfileData = {
@@ -199,7 +192,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   };
 
   const handleProfileSetupComplete = (profileData: { firstName: string; lastName: string }) => {
-    console.log('Profile setup completed:', profileData);
     // Merge with existing pending profile data
     const existingData = localStorage.getItem('swarp_fd_pending_profile');
     const mergedData = {
@@ -210,8 +202,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
     setCurrentStep('profile-photo');
   };
 
-  const handleProfilePhotoComplete = (photoData: { profilePictureUrl?: string }) => {
-    console.log('Profile photo completed:', photoData);
+  const handleProfilePhotoComplete = (_photoData: { profilePictureUrl?: string }) => {
     // Profile photo component already persisted all data to backend
     setCurrentStep('creating-wallet');
   };
@@ -219,13 +210,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   const handleWalletCreated = () => {
     // Check if user already has a PIN (existing user)
     const userHasPIN = localStorage.getItem('swarp_fd_user_has_pin') === 'true';
-    
-    console.log('🔧 handleWalletCreated called:', {
-      userHasPIN,
-      userHasPINValue: localStorage.getItem('swarp_fd_user_has_pin'),
-      nextStep: userHasPIN ? 'enter-passcode' : 'set-passcode'
-    });
-    console.trace('🔧 Stack trace for handleWalletCreated:');
     
     if (userHasPIN) {
       setCurrentStep('enter-passcode');
@@ -240,22 +224,19 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   };
 
   const handlePasscodeConfirmed = () => {
-    // Clean up temporary flags
     localStorage.removeItem('swarp_fd_user_has_pin');
     localStorage.removeItem('swarp_fd_onboarding_step');
     onComplete?.({ method: 'onboarding-complete' });
   };
 
   const handleEnterPasscodeComplete = () => {
-    // Clean up temporary flags
     localStorage.removeItem('swarp_fd_user_has_pin');
     localStorage.removeItem('swarp_fd_onboarding_step');
     onComplete?.({ method: 'onboarding-complete' });
   };
 
   const handleReferralCode = () => {
-    console.log('Referral code clicked');
-    // TODO: Implement referral code flow
+    setIsReferralCodeOpen(true);
   };
 const isGoogleUserPayload = (value: unknown): value is GoogleUserPayload => {
   return typeof value === 'object' && value !== null && 'email' in value;
@@ -312,8 +293,6 @@ const handleContinueWithGoogle = useCallback(
   [] // no external dependencies
 );
 
-
-// Check for Google callback URL parameters on mount
 useEffect(() => {
   const urlParams = new URLSearchParams(window.location.search);
   const token = urlParams.get('token');
@@ -347,18 +326,22 @@ useEffect(() => {
   }
 }, [handleContinueWithGoogle]);
 
-
-  console.log('🎯 Rendering step:', currentStep);
-
   switch (currentStep) {
     case 'signup-email':
       return (
-        <SignUpEmailScreen
-          onBack={handleBack}
-          onContinue={handleEmailContinue}
-          onContinueWithGoogle={handleContinueWithGoogle}
-          onReferralCode={handleReferralCode}
-        />
+        <>
+          <SignUpEmailScreen
+            onBack={handleBack}
+            onContinue={handleEmailContinue}
+            onContinueWithGoogle={handleContinueWithGoogle}
+            onReferralCode={handleReferralCode}
+          />
+          <ReferralCodeModal
+            isOpen={isReferralCodeOpen}
+            onClose={() => setIsReferralCodeOpen(false)}
+            onSubmit={() => setIsReferralCodeOpen(false)}
+          />
+        </>
       );
     
     case 'verify-phone':
@@ -443,11 +426,18 @@ useEffect(() => {
     
     default:
       return (
-        <SignUpEmailScreen
-          onBack={handleBack}
-          onContinue={handleEmailContinue}
-          onReferralCode={handleReferralCode}
-        />
+        <>
+          <SignUpEmailScreen
+            onBack={handleBack}
+            onContinue={handleEmailContinue}
+            onReferralCode={handleReferralCode}
+          />
+          <ReferralCodeModal
+            isOpen={isReferralCodeOpen}
+            onClose={() => setIsReferralCodeOpen(false)}
+            onSubmit={() => setIsReferralCodeOpen(false)}
+          />
+        </>
       );
   }
 };

@@ -84,7 +84,6 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
       return '';
     };
 
-    // Create a typed data object with string values
     const data = {
       amount: str(rawData.amount),
       currency: str(rawData.currency),

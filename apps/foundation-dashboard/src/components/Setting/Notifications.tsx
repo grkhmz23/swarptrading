@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import SettingsTile from "./shared/SettingsTile";
 import ToggleButton from "./shared/ToggleButton";
 import { apiService } from "@/services/api";
@@ -40,7 +40,6 @@ export default function Notifications() {
       }
 
       const prefs = await apiService.getNotificationPreferences(token);
-      console.log("Loaded preferences:", prefs);
       setPreferences(prefs);
     } catch (error) {
       console.error("Failed to load notification preferences:", error);
@@ -68,7 +67,6 @@ export default function Notifications() {
       setPreferences((prev) => ({ ...prev, [key]: value }));
 
       const response = await apiService.updateNotificationPreferences(token, { [key]: value });
-      console.log("Preference updated:", key, value, response);
 
       // Update with server response to ensure consistency
       if (response.preferences) {

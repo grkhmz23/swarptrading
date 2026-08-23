@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { HomeScreen } from '../../components/home/HomeScreen';
 import { useT } from '@/i18n/I18nProvider';
@@ -12,7 +12,6 @@ export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check authentication
     const token = localStorage.getItem('swarp_fd_access_token');
     
     if (!token) {
@@ -21,7 +20,6 @@ export default function HomePage() {
     }
 
     try {
-      // Validate token
       const tokenPayload = JSON.parse(atob(token.split('.')[1]));
       const currentTime = Math.floor(Date.now() / 1000);
       

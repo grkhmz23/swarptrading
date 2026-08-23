@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   createChart,
   IChartApi,
@@ -203,7 +203,6 @@ export function tradesToOHLC(
           color: currentPrice >= lastCandle.close ? colors.volumeUp : colors.volumeDown,
         });
       } else {
-        // Update the last candle's close to current price
         lastCandle.close = currentPrice;
         lastCandle.high = Math.max(lastCandle.high, currentPrice);
         lastCandle.low = Math.min(lastCandle.low, currentPrice);
@@ -335,11 +334,9 @@ export default function TradingViewChart({
     return vol.toFixed(2);
   };
 
-  // Initialize chart
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // Create chart with Figma-matching styles
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: colors.background },
@@ -470,7 +467,6 @@ export default function TradingViewChart({
       priceLineVisible: false, // Hide the price line
     });
 
-    // Configure volume scale - separate from price
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
         top: 0.85,
@@ -519,7 +515,6 @@ export default function TradingViewChart({
       }
     });
 
-    // Handle resize
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
         chartRef.current.applyOptions({
@@ -547,7 +542,6 @@ export default function TradingViewChart({
     candlestickSeriesRef.current.setData(candles as CandlestickData<Time>[]);
     volumeSeriesRef.current.setData(volume as HistogramData<Time>[]);
 
-    // Initialize OHLC legend with latest candle
     if (candles.length > 0) {
       const lastCandle = candles[candles.length - 1];
       const lastVolume = volume.length > 0 ? volume[volume.length - 1].value : 0;
@@ -567,14 +561,12 @@ export default function TradingViewChart({
     }
   }, [trades, currentPrice, selectedTimeframe]);
 
-  // Handle timeframe change
   const handleTimeframeChange = useCallback(
     (tf: Timeframe) => {
       setSelectedTimeframe(tf);
       setIsDropdownOpen(false);
       onTimeframeChange?.(tf);
 
-      // Update seconds visibility
       if (chartRef.current) {
         chartRef.current.applyOptions({
           timeScale: {
@@ -588,7 +580,7 @@ export default function TradingViewChart({
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (_e: MouseEvent) => {
       if (isDropdownOpen) {
         setIsDropdownOpen(false);
       }

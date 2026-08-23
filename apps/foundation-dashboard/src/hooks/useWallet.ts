@@ -32,8 +32,6 @@ export const useWallet = (): UseWalletReturn => {
   const loadWalletData = useCallback(async () => {
     try {
       const token = localStorage.getItem('swarp_fd_access_token');
-      console.log('🔍 Debug - Loading wallet data:');
-      console.log('- Token present:', token ? 'YES' : 'NO');
 
       if (!token) {
         console.error('❌ No authentication token found');
@@ -44,18 +42,14 @@ export const useWallet = (): UseWalletReturn => {
       // Get wallet data from localStorage first (faster)
       const storedWallet = localStorage.getItem('swarp_fd_wallet');
       if (storedWallet) {
-        console.log('📱 Using cached wallet data while fetching fresh data');
         setWallet(JSON.parse(storedWallet));
       }
 
       // Then fetch fresh data from API
-      console.log('🌐 Making API call to /wallet endpoint');
       const wallets = await apiService.getUserWallets(token);
-      console.log('✅ API call successful, received wallets:', wallets.length);
       if (wallets.length > 0) {
         setWallet(wallets[0]);
         localStorage.setItem('swarp_fd_wallet', JSON.stringify(wallets[0]));
-        console.log('💾 Wallet data updated and cached');
       }
     } catch (error: unknown) {
       console.error('❌ Error loading wallet data:', error);
@@ -73,7 +67,7 @@ export const useWallet = (): UseWalletReturn => {
         try {
           setWallet(JSON.parse(storedWallet));
           setError(null); // Clear error if we have fallback data
-          console.log('🔄 Using cached wallet data due to API error');
+          console.error('🔄 Using cached wallet data due to API error');
         } catch {
           console.error('💥 Failed to parse cached wallet data');
           const apiError = error as { message?: string };
@@ -103,7 +97,6 @@ export const useWallet = (): UseWalletReturn => {
 
   const handleSendSuccess = useCallback((newBalance: number) => {
     setWallet(prev => prev ? { ...prev, balance: newBalance } : null);
-    // Update localStorage
     if (wallet) {
       const updatedWallet = { ...wallet, balance: newBalance };
       localStorage.setItem('swarp_fd_wallet', JSON.stringify(updatedWallet));
@@ -173,7 +166,6 @@ export const useWallet = (): UseWalletReturn => {
     loadWalletData();
   }, [loadWalletData]);
 
-  // Load wallet data on mount
   useEffect(() => {
     loadWalletData();
     loadMainnetBalance();

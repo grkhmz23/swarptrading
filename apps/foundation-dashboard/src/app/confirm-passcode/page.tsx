@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import { ConfirmPasscode } from '@/components/onboarding/ConfirmPasscode';
 import { useRouter } from 'next/navigation';
 
@@ -9,7 +9,6 @@ export default function ConfirmPasscodePage() {
   const [originalPasscode, setOriginalPasscode] = useState('');
 
   useEffect(() => {
-    // Get the original passcode from sessionStorage
     const tempPasscode = sessionStorage.getItem('swarp_fd_temp_passcode');
     if (!tempPasscode) {
       // If no passcode found, redirect back to set passcode
@@ -23,10 +22,8 @@ export default function ConfirmPasscodePage() {
   };
 
   const handleComplete = () => {
-    // Clear temporary passcode
     sessionStorage.removeItem('swarp_fd_temp_passcode');
-    // TODO: Navigate to dashboard or next step
-    alert('Onboarding completed successfully!');
+    router.replace('/dashboard');
   };
 
   if (!originalPasscode) {

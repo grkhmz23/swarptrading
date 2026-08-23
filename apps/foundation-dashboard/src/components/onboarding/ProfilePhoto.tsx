@@ -114,7 +114,6 @@ const handleSavePicture = async () => {
     // Call onComplete
     onComplete?.({ profilePictureUrl: pictureKey });
   } catch (error) {
-    // Handle fetch/makeRequest errors
     if (typeof error === 'object' && error !== null && 'status' in error && (error as { status?: number }).status === 413) {
       setError(t.onboarding?.profilePhoto?.errors?.fileSizeLimit || 'File size must be less than 1 MB. Please select a smaller image.');
     } else if (error instanceof Error) {
@@ -127,7 +126,6 @@ const handleSavePicture = async () => {
   }
 };
 
-  // Handle Enter key press to continue
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && !isLoadingRef.current) {

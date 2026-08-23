@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { VerifyPhone } from '@/components/onboarding/VerifyPhone';
 import { useRouter } from 'next/navigation';
 
@@ -12,7 +11,6 @@ export default function VerifyPhonePage() {
   };
 
   const handleComplete = () => {
-    console.log('Phone verification completed');
     router.push('/select-citizenship');
   };
 

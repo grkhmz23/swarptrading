@@ -1,9 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { apiService } from "@/services/api";
 
-// =======================
-// Types
-// =======================
 export interface Referral {
   id: string;
   firstName: string;
@@ -21,9 +18,6 @@ interface ReferralState {
   error: string | null;
 }
 
-// =======================
-// Initial State
-// =======================
 const initialState: ReferralState = {
   referrals: [],
   count: 0,
@@ -31,9 +25,6 @@ const initialState: ReferralState = {
   error: null,
 };
 
-// =======================
-// Async Thunk
-// =======================
 type ReferralApiResponse = {
   id: string;
   firstName: string;
@@ -68,7 +59,6 @@ export const fetchReferrals = createAsyncThunk<
         walletAddress: r.walletAddress ?? null, // ✅ add this to satisfy type
         joinedAt: r.joinedAt,
       }));
-console.log("Fetched referrals:", referrals);
       return { count: res.count, referrals };
     } catch (err: unknown) {
       if (err instanceof Error) return rejectWithValue(err.message);
@@ -77,10 +67,6 @@ console.log("Fetched referrals:", referrals);
   }
 );
 
-
-// =======================
-// Slice
-// =======================
 const referralSlice = createSlice({
   name: "referrals",
   initialState,
@@ -114,8 +100,5 @@ const referralSlice = createSlice({
   },
 });
 
-// =======================
-// Exports
-// =======================
 export const { clearReferrals } = referralSlice.actions;
 export default referralSlice.reducer;

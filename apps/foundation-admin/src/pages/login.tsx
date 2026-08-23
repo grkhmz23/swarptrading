@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 export const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { mutate: login, isLoading } = useLogin();
+  const { mutate: login, isPending: isLoading } = useLogin();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

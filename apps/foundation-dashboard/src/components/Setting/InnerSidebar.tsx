@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 
 export interface InnerSidebarItem {
@@ -23,15 +23,12 @@ export default function InnerSidebar({
   const [sidebarOpen] = useState(true);
 
   const handleSectionSelect = (sectionId: string) => {
-    // Save to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem("swarp_fd_settings_subsection", sectionId);
     }
     
-    // Update state through parent component
     onSelect(sectionId);
     
-    // Dispatch custom event
     const event = new CustomEvent("settings-subsection-change", {
       detail: sectionId
     });

@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { SetPasscode } from '@/components/onboarding/SetPasscode';
 import { useRouter } from 'next/navigation';
 

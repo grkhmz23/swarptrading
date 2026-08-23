@@ -30,9 +30,6 @@ export const SignUpEmailScreen: React.FC<SignUpEmailScreenProps> = ({
 
   const router = useRouter();
 
-
-
-
     /** --------- Handle Google OAuth Redirect --------- */
 useEffect(() => {
   const params = new URLSearchParams(window.location.search);
@@ -64,7 +61,6 @@ useEffect(() => {
       }
     }
 
-    // Clean the URL
     const url = new URL(window.location.href);
     url.searchParams.delete('token');
     url.searchParams.delete('newUser');
@@ -80,8 +76,6 @@ useEffect(() => {
     }
   }
 }, [router, onContinueWithGoogle]);
-
-
 
   const handlePhoneChange = (value: string | undefined) => {
     // If value is provided, check if it's getting too long or malformed
@@ -149,11 +143,9 @@ useEffect(() => {
 
     try {
       const result = await apiService.continueWithPhone(phoneNumber);
-      console.log('Continue flow result:', result);
       
       // Display OTP in browser console if returned (development mode)
       if (result.otp) {
-        console.log('📱 Phone:', phoneNumber);
         
         // Store OTP in sessionStorage for mobile testing (development only)
         if (process.env.NODE_ENV !== 'production') {
@@ -168,15 +160,6 @@ useEffect(() => {
       localStorage.setItem('swarp_fd_requires_onboarding', result.requiresOnboarding.toString());
        localStorage.setItem('swarp_fd_login_method', 'phone');
        
-      
-      console.log('🔍 Flow decision:', {
-        isNewUser: result.isNewUser,
-        requiresOnboarding: result.requiresOnboarding,
-        hasWalletPIN: result.hasWalletPIN,
-        userId: result.userId,
-        phoneNumber
-      });
-      
       // Route based on user status
       if (!result.isNewUser && !result.requiresOnboarding && result.hasWalletPIN) {
         // Existing user with passcode - go directly to passcode login
@@ -206,13 +189,10 @@ useEffect(() => {
     }
   };
 
-
   const handleContinueWithGoogle = () => {
 window.location.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/auth/google/callback`;
 
-    
   };
-
 
   const isFormValid = phoneNumber && phoneNumber.trim() !== '' && isValidPhoneNumber(phoneNumber || '');
 
@@ -507,8 +487,7 @@ window.location.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3
 <ReferralCodeModal
   isOpen={isReferralModalOpen}
   onClose={() => setIsReferralModalOpen(false)}
-  onSubmit={(code) => {
-    console.log("submitted:", code);
+  onSubmit={(_code) => {
 
     // WAIT 1 SECOND BEFORE CLOSING
     setTimeout(() => {

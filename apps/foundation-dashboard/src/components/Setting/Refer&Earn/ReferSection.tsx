@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Copy, Upload } from "lucide-react";
 import RewardItem from "./RewardItem";
 import { apiService } from "@/services/api";
@@ -11,11 +11,6 @@ export default function ReferSection() {
   const [referralCode, setReferralCode] = useState<string>("");
   const [copySuccess, setCopySuccess] = useState(false);
 
-
-
-
-
-  
   // 🔹 Auto-generate referral code on load
 useEffect(() => {
   const generateReferral = async () => {
@@ -65,7 +60,6 @@ useEffect(() => {
   generateReferral();
 }, []);
 
-
   // Copy referral code
   const copyToClipboard = async () => {
     const code = referralCode.replace(/\s+/g, "");
@@ -98,7 +92,7 @@ useEffect(() => {
           url: window.location.href,
         });
       } catch (err) {
-        console.log("Share cancelled or failed", err);
+        console.error("Share cancelled or failed", err);
       }
     } else {
       alert(shareText);

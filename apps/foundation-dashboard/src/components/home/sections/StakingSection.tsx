@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '@/services/api';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
 interface StakingPool {
   id: string;
   name: string;
@@ -38,8 +36,6 @@ interface StakingSectionProps {
   authToken: string | null;
 }
 
-// ─── Fallback data ──────────────────────────────────────────────────────────
-
 const FALLBACK_POOLS: StakingPool[] = [
   { id: 'flexible', name: 'Flexible', lockDays: 30, apyPercent: 8, minStake: 100, maxStake: 1000000, totalStaked: 0 },
   { id: 'growth', name: 'Growth', lockDays: 90, apyPercent: 15, minStake: 500, maxStake: 1000000, totalStaked: 0 },
@@ -47,8 +43,6 @@ const FALLBACK_POOLS: StakingPool[] = [
 ];
 
 const FALLBACK_SUMMARY: StakingSummary = { totalStaked: 0, totalEarned: 0, activePositions: 0, availableBalance: 0 };
-
-// ─── Component ──────────────────────────────────────────────────────────────
 
 export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => {
   const [pools, setPools] = useState<StakingPool[]>(FALLBACK_POOLS);
@@ -64,8 +58,6 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
   const [stakeError, setStakeError] = useState<string | null>(null);
   const [stakeSuccess, setStakeSuccess] = useState(false);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-
-  // ─── Data fetching ──────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
     if (!authToken) { setLoading(false); return; }
@@ -121,8 +113,6 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ─── Handlers ───────────────────────────────────────────────────────────
-
   const handleStake = async () => {
     if (!authToken || !selectedPool) return;
     const amount = parseFloat(stakeAmount);
@@ -150,8 +140,6 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
     finally { setWithdrawingId(null); }
   };
 
-  // ─── Helpers ──────────────────────────────────────────────────────────
-
   const computeEstimates = (amount: number, apy: number, days: number) => {
     const daily = amount * (apy / 100 / 365);
     return { daily, monthly: daily * 30, atMaturity: daily * days };
@@ -165,8 +153,6 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
   };
 
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-  // ─── Loading ──────────────────────────────────────────────────────────
 
   if (loading) {
     return (

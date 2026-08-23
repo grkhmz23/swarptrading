@@ -200,7 +200,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onClick={() => {
                             // Store the selected section
                             localStorage.setItem("swarp_fd_settings_subsection", sub.id);
-                            // Dispatch a global event for real-time update
                             window.dispatchEvent(new CustomEvent("settings-subsection-change", { detail: sub.id }));
                             // Navigate to Settings page
                             onNavigationClick("Settings");
@@ -273,7 +272,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onClick={() => {
                             // Store the selected section
                             localStorage.setItem("swarp_fd_launchpad_subsection", sub.id);
-                            // Dispatch a global event for real-time update
                             window.dispatchEvent(new CustomEvent("launchpad-subsection-change", { detail: sub.id }));
                             // Navigate to Launchpad page
                             onNavigationClick("Launchpad");

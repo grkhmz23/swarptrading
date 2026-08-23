@@ -36,7 +36,6 @@ export const ReceiveModal: React.FC<ReceiveModalProps> = ({
         canvas.width = size;
         canvas.height = size;
 
-        // Create white background
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, size, size);
 
@@ -50,7 +49,6 @@ export const ReceiveModal: React.FC<ReceiveModalProps> = ({
         const offsetX = (size - qrSize) / 2;
         const offsetY = (size - qrSize) / 2;
 
-        // Create gradient for colorful dots
         const createGradient = (x: number, y: number, radius: number) => {
           const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
           // Blue to purple gradient like Figma

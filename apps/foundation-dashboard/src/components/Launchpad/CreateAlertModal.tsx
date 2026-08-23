@@ -31,7 +31,6 @@ export default function CreateAlertModal({
 
   const MAX_NOTE_LENGTH = 50;
 
-  // Fetch live projects
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -83,7 +82,6 @@ export default function CreateAlertModal({
 
   if (!isOpen) return null;
 
-  // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onClose();
@@ -98,7 +96,6 @@ export default function CreateAlertModal({
     }
   };
 
-  // Handle save
   const handleSave = async () => {
     if (!selectedProject || !targetPrice) {
       setError(t.launchpad?.alerts?.errors?.selectTokenAndPrice || "Please select a token and enter a target price");

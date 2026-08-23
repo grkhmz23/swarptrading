@@ -22,7 +22,6 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ className = 
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Get the display name for current language
   const currentLang = languages.find(
     (l) => l.name === selectedLanguage || l.code === displayNameToLocale[selectedLanguage]
   ) || languages[0];

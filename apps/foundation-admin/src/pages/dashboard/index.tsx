@@ -63,18 +63,18 @@ const renderCustomLabel = ({ cx, cy, midAngle, outerRadius, name, percent }: { c
 };
 
 export const Dashboard = () => {
-  const { data: statsData, isLoading: statsLoading } = useCustom<DashboardStats>({
+  const { result: statsResult, query: { isLoading: statsLoading } } = useCustom<DashboardStats>({
     url: "/admin-api/dashboard/stats",
     method: "get",
   });
 
-  const { data: chartsData, isLoading: chartsLoading } = useCustom<ChartData>({
+  const { result: chartsResult, query: { isLoading: chartsLoading } } = useCustom<ChartData>({
     url: "/admin-api/dashboard/charts",
     method: "get",
   });
 
-  const stats = statsData?.data;
-  const charts = chartsData?.data;
+  const stats = statsResult.data;
+  const charts = chartsResult.data;
 
   const isLoading = statsLoading || chartsLoading;
 

@@ -1,5 +1,5 @@
 import { Refine, Authenticated } from "@refinedev/core";
-import routerProvider from "@refinedev/react-router-v6";
+import routerProvider from "@refinedev/react-router";
 import { dataProvider } from "./dataProvider";
 import { authProvider } from "./authProvider";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
@@ -70,7 +70,6 @@ function App() {
           options={{
             syncWithLocation: true,
             warnWhenUnsavedChanges: true,
-            useNewQueryKeys: true,
           }}
         >
           <Routes>

@@ -96,9 +96,6 @@ export const fetchProfilePictureUrl = createAsyncThunk<string | null, string>(
   }
 );
 
-// ======================
-// Slice
-// ======================
 const userSlice = createSlice({
   name: "user",
   initialState,
@@ -109,7 +106,6 @@ const userSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // --- fetchUserProfile ---
       .addCase(fetchUserProfile.pending, (state) => {
         state.status = "loading";
       })
@@ -122,7 +118,6 @@ const userSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // --- updateUserProfile ---
       .addCase(updateUserProfile.pending, (state) => {
         state.status = "loading";
       })
@@ -138,7 +133,6 @@ const userSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // --- uploadProfilePicture ---
       .addCase(uploadProfilePicture.pending, (state) => {
         state.status = "loading";
       })
@@ -150,7 +144,6 @@ const userSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // --- fetchProfilePictureUrl ---
       .addCase(fetchProfilePictureUrl.pending, (state) => {
         state.status = "loading";
       })
@@ -165,8 +158,5 @@ const userSlice = createSlice({
   },
 });
 
-// ======================
-// Exports
-// ======================
 export const { clearUser } = userSlice.actions;
 export default userSlice.reducer;

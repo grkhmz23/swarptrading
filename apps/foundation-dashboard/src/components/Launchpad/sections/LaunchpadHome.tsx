@@ -288,7 +288,6 @@ export default function LaunchpadHome() {
   const [tempFilters, setTempFilters] = useState<FilterState>(defaultFilters);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
-  // Fetch featured projects
   const fetchFeaturedProjects = useCallback(async () => {
     setIsLoadingFeatured(true);
     try {
@@ -304,7 +303,6 @@ export default function LaunchpadHome() {
     }
   }, []);
 
-  // Fetch live projects
   const fetchLiveProjects = useCallback(async (search?: string) => {
     setIsLoadingLive(true);
     try {
@@ -429,7 +427,6 @@ export default function LaunchpadHome() {
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {isLoadingFeatured ? (
-            // Loading skeleton
             Array.from({ length: 4 }).map((_, index) => (
               <div
                 key={index}
@@ -509,7 +506,6 @@ export default function LaunchpadHome() {
         {/* Projects Grid */}
         <div className="grid grid-cols-1 xl:grid-cols-2 !gap-4">
           {isLoadingLive ? (
-            // Loading skeleton
             Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="flex !gap-3">
                 <div className="w-[140px] h-[140px] lg:w-[160px] lg:h-[160px] xl:w-[180px] xl:h-[180px] rounded-xl bg-[#1A1B23] animate-pulse flex-shrink-0" />

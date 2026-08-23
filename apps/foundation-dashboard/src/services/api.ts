@@ -248,9 +248,6 @@ class ApiService {
     const requestBody = { pin };
     const requestBodyString = JSON.stringify(requestBody);
     
-    console.log('Request body object:', requestBody);
-    console.log('Request body JSON string:', requestBodyString);
-    
     return this.makeRequest('/auth/set-wallet-pin', {
       method: 'POST',
       headers: {
@@ -265,7 +262,6 @@ class ApiService {
     
     const requestBody = { pin };
     const requestBodyString = JSON.stringify(requestBody);
-    
     
     return this.makeRequest('/auth/verify-wallet-pin', {
       method: 'POST',
@@ -297,7 +293,6 @@ class ApiService {
     });
   }
 
-  // Initialize wallet on Solana blockchain
   async initializeWallet(walletId: string, token: string): Promise<{ success: boolean; message: string; balance: number; signature: string; explorerUrl: string; walletUrl: string }> {
     return this.makeRequest(`/wallet/${walletId}/initialize`, {
       method: 'POST',
@@ -309,15 +304,6 @@ class ApiService {
 
   // Send SOL or SPL token transaction
   async sendTransaction(walletId: string, token: string, data: { toAddress: string; amount: number; memo?: string; tokenMint?: string }): Promise<{ signature: string; fee?: number }> {
-    console.log('API service sending transaction:', {
-      walletId,
-      data,
-      amount: data.amount,
-      amountType: typeof data.amount,
-      toAddress: data.toAddress,
-      toAddressType: typeof data.toAddress,
-      tokenMint: data.tokenMint
-    });
 
     const requestBody: { toAddress: string; amount: number; memo?: string; tokenMint?: string } = {
       toAddress: data.toAddress,
@@ -330,9 +316,6 @@ class ApiService {
       requestBody.tokenMint = data.tokenMint;
     }
 
-    console.log('Request body being sent:', requestBody);
-    console.log('JSON stringified body:', JSON.stringify(requestBody));
-
     return this.makeRequest(`/wallet/${walletId}/send-transaction`, {
       method: 'POST',
       headers: {
@@ -343,7 +326,6 @@ class ApiService {
     });
   }
 
-  // Get transaction history
   async getTransactionHistory(walletId: string, token: string): Promise<{ transactions: Array<{ id: string; signature: string; type: 'SEND' | 'RECEIVE'; amount: number; fromAddress: string; toAddress: string; fee: number; status: 'PENDING' | 'CONFIRMED' | 'FAILED'; timestamp: string; errorMessage?: string }>; total: number }> {
     return this.makeRequest(`/wallet/${walletId}/transactions`, {
       method: 'GET',
@@ -386,18 +368,12 @@ class ApiService {
     });
   }
 
-  // Validate Solana address
   async validateSolanaAddress(address: string, token: string): Promise<{
     valid: boolean;
     address: string;
     message: string;
   }> {
     const requestBody = { address };
-    console.log('API validateSolanaAddress request:', {
-      address,
-      requestBody,
-      bodyString: JSON.stringify(requestBody)
-    });
     
     return this.makeRequest('/wallet/validate-address', {
       method: 'POST',
@@ -435,7 +411,6 @@ class ApiService {
       body: JSON.stringify({ username }),
     });
   }
-
 
   async checkUsernameAvailability(username: string, token: string): Promise<{
     available: boolean;
@@ -527,12 +502,6 @@ class ApiService {
       ...(mainnetTxSignature && { mainnetTxSignature })
     };
 
-    console.log('API syncMoonPayBalance request:', {
-      walletId,
-      requestBody,
-      bodyString: JSON.stringify(requestBody)
-    });
-
     return this.makeRequest(`/wallet/${walletId}/sync-moonpay-balance`, {
       method: 'POST',
       headers: {
@@ -543,9 +512,6 @@ class ApiService {
     });
   }
 
-  // =================== SWAP FUNCTIONALITY ===================
-
-  // Get swap quote
   async getSwapQuote(
     walletId: string, 
     token: string, 
@@ -570,11 +536,6 @@ class ApiService {
     validUntil: number;
     route: unknown;
   }> {
-    console.log('API getSwapQuote request:', {
-      walletId,
-      data,
-      bodyString: JSON.stringify(data)
-    });
 
     return this.makeRequest(`/wallet/${walletId}/swap/quote`, {
       method: 'POST',
@@ -586,7 +547,6 @@ class ApiService {
     });
   }
 
-  // Execute swap
   async executeSwap(
     walletId: string,
     token: string,
@@ -603,10 +563,6 @@ class ApiService {
     actualOutputAmount?: number;
     error?: string;
   }> {
-    console.log('API executeSwap request:', {
-      walletId,
-      data
-    });
 
     return this.makeRequest(`/wallet/${walletId}/swap/execute`, {
       method: 'POST',
@@ -618,7 +574,6 @@ class ApiService {
     });
   }
 
-  // Get swap history
   async getSwapHistory(
     walletId: string,
     token: string,
@@ -668,7 +623,6 @@ class ApiService {
     });
   }
 
-  // Get supported trading pairs
   async getSupportedSwapPairs(walletId: string, token: string): Promise<Array<{
     input: string;
     output: string;
@@ -698,11 +652,6 @@ class ApiService {
     minimumReceived: number;
     exchangeRate: number;
   }> {
-    console.log('API estimateSwapFees request:', {
-      walletId,
-      data,
-      bodyString: JSON.stringify(data)
-    });
 
     return this.makeRequest(`/wallet/${walletId}/swap/estimate-fees`, {
       method: 'POST',
@@ -714,7 +663,6 @@ class ApiService {
     });
   }
 
-  // Get token balances for swapping
   async getSwapTokenBalances(walletId: string, token: string): Promise<Array<{
     token: string;
     symbol: string;
@@ -755,7 +703,6 @@ class ApiService {
     }));
   }
 
-  // Get token balances with portfolio value
   async getTokenBalances(walletId: string, token: string): Promise<{
     balances: Array<{ symbol: string; mint: string; balance: number; formattedBalance: string; usdValue: number }>;
     portfolioValue: number;
@@ -842,7 +789,6 @@ async applyReferral(token: string, referralCode: string): Promise<{ message: str
 
 // Check Referral Code Validity
 
-// Check Referral Code
 async checkReferralCode(referralCode: string): Promise<{ valid: boolean; message: string }> {
   return this.makeRequest(`/auth/check-referral`, {
     method: 'POST',
@@ -853,8 +799,6 @@ async checkReferralCode(referralCode: string): Promise<{ valid: boolean; message
   });
 }
 
-
-//  GET MY REFERRALS 
 async getMyReferrals(token: string): Promise<{
   count: number;
   referrals: {
@@ -874,7 +818,6 @@ async getMyReferrals(token: string): Promise<{
     },
   });
 }
-//  UPDATE PASSCODE 
 async updatePasscode(
   token: string,
   oldPasscode: string,
@@ -889,11 +832,6 @@ async updatePasscode(
     body: JSON.stringify({ oldPasscode, newPasscode }),
   });
 }
-
-  // ====== Reward Types ======
-  // Reward response type from backend
-  // Category: REFERRAL | TRANSACTION
-  // Section: MILESTONES | YOUR_REWARDS | MORE_REWARDS
 
   //  Claim a Reward
   async claimReward(
@@ -910,7 +848,6 @@ async updatePasscode(
     });
   }
 
-  //  Get Reward Status
   async getRewardStatus(
     userId: string,
     rewardType: string,
@@ -925,7 +862,6 @@ async updatePasscode(
     });
   }
 
-  //  Get All Rewards
   async getAllRewards(
     userId: string,
     token: string
@@ -980,7 +916,6 @@ async updatePasscode(
       },
     });
   }
-//  Delete User Account 
 async deleteUserAccount(token: string): Promise<{ message: string; success: boolean }> {
   return this.makeRequest(`/auth/delete-account`, {
     method: 'DELETE',
@@ -990,7 +925,6 @@ async deleteUserAccount(token: string): Promise<{ message: string; success: bool
     },
   });
 }
-//  Get User Contacts 
 async getUserContacts(userId: string, token: string): Promise<{ success: boolean; contacts: { nickname: string; address: string }[] }> {
   return this.makeRequest(`/auth/contacts`, {
     method: 'GET',
@@ -1070,7 +1004,6 @@ async addUserContact(userId: string, nickname: string, address: string, token: s
   //   }
   // }
 
-  // Update authenticated user's profile
   async updateUserProfile(
     data: { firstName: string; lastName: string; email: string },
     token: string
@@ -1084,7 +1017,6 @@ async addUserContact(userId: string, nickname: string, address: string, token: s
       body: JSON.stringify(data),
     });
   }
-
 
   async uploadProfilePicture(file: File, token: string): Promise<{ key: string }> {
     const formData = new FormData();
@@ -1111,8 +1043,6 @@ async addUserContact(userId: string, nickname: string, address: string, token: s
     });
   }
 
-
-
   // Call backend Google callback endpoint
   async googleLoginCallback(code: string): Promise<{
     access_token: string;
@@ -1136,9 +1066,6 @@ async addUserContact(userId: string, nickname: string, address: string, token: s
     });
   }
 
-
-
-  // Get latest exchange rates from backend
 async getExchangeRates(): Promise<{
   success: boolean;
   message: string;
@@ -1165,7 +1092,6 @@ async getExchangeRates(): Promise<{
   });
 }
 
-// ====== Translations ======
 async getTranslations(locale: string): Promise<Record<string, unknown>> {
   return this.makeRequest<Record<string, unknown>>(`/translations/${locale}`, {
     method: 'GET',
@@ -1184,7 +1110,6 @@ async getSupportedLocales(): Promise<{ locales: string[]; default: string }> {
   });
 }
 
-// ====== Notification Preferences ======
 async getNotificationPreferences(token: string): Promise<{
   allowNotifications: boolean;
   transactionAlerts: boolean;
@@ -1278,7 +1203,6 @@ async getLanguage(token: string): Promise<{ language: string }> {
   });
 }
 
-// ====== Token Prices ======
 async getTokenPrices(symbols?: string[]): Promise<{
   prices: Record<string, { price: number; priceChange24h?: number }>;
   timestamp: number;
@@ -1312,7 +1236,6 @@ async getSupportedTokens(): Promise<{
   });
 }
 
-// ====== Jupiter Token List (Dynamic) ======
 async getAllJupiterTokens(params?: { search?: string; limit?: number }): Promise<{
   tokens: Array<{
     address: string;
@@ -1357,7 +1280,6 @@ async getPopularTokens(): Promise<{
   });
 }
 
-// ====== Tokens with Volume Data (DexScreener) ======
 async getTokensWithVolume(params?: { search?: string; limit?: number }): Promise<{
   tokens: Array<{
     address: string;
@@ -1416,8 +1338,6 @@ async searchTokens(query: string, limit?: number): Promise<{
   });
 }
 
-// ====== LAUNCHPAD API ======
-
 // Launchpad Project Types
 // Get featured projects for homepage carousel
 async getLaunchpadFeaturedProjects(): Promise<{
@@ -1454,7 +1374,6 @@ async getLaunchpadLiveProjects(params?: {
   });
 }
 
-// Get all projects with filtering
 async getLaunchpadProjects(params?: {
   page?: number;
   limit?: number;
@@ -1482,7 +1401,6 @@ async getLaunchpadProjects(params?: {
   });
 }
 
-// Get single project by ID
 async getLaunchpadProject(projectId: string, token?: string | null): Promise<LaunchpadProject> {
   return this.makeRequest(`/launchpad/projects/${projectId}`, {
     method: 'GET',
@@ -1540,7 +1458,6 @@ async uploadLaunchpadProjectImage(
   return response.json();
 }
 
-// Get buy quote for a project
 async getLaunchpadBuyQuote(
   projectId: string,
   amount: number
@@ -1556,7 +1473,6 @@ async getLaunchpadBuyQuote(
   });
 }
 
-// Get sell quote for a project
 async getLaunchpadSellQuote(
   projectId: string,
   amount: number
@@ -1572,7 +1488,6 @@ async getLaunchpadSellQuote(
   });
 }
 
-// Execute buy trade
 async buyLaunchpadToken(
   projectId: string,
   amount: number,
@@ -1597,7 +1512,6 @@ async buyLaunchpadToken(
   });
 }
 
-// Execute sell trade
 async sellLaunchpadToken(
   projectId: string,
   amount: number,
@@ -1622,7 +1536,6 @@ async sellLaunchpadToken(
   });
 }
 
-// Get user's token balance for a project
 async getLaunchpadTokenBalance(
   projectId: string,
   token: string
@@ -1638,7 +1551,6 @@ async getLaunchpadTokenBalance(
   });
 }
 
-// Get recent trades for a project
 async getLaunchpadProjectTrades(
   projectId: string,
   params?: { limit?: number }
@@ -1661,7 +1573,6 @@ async getLaunchpadProjectTrades(
   });
 }
 
-// Get user's launchpad portfolio
 async getLaunchpadPortfolio(token: string): Promise<{
   investments: Array<{
     id: string;
@@ -1712,7 +1623,6 @@ async getLaunchpadPortfolio(token: string): Promise<{
   });
 }
 
-// Get user's trade history across all projects
 async getLaunchpadUserTradeHistory(
   token: string,
   params?: { page?: number; limit?: number; type?: 'buy' | 'sell' }
@@ -1772,7 +1682,6 @@ async toggleLaunchpadWatchlist(
   });
 }
 
-// Get user's watchlist
 async getLaunchpadWatchlist(token: string): Promise<{
   projects: LaunchpadProject[];
 }> {
@@ -1784,9 +1693,6 @@ async getLaunchpadWatchlist(token: string): Promise<{
   });
 }
 
-// ==================== ALERT METHODS ====================
-
-// Create a new alert
 async createLaunchpadAlert(
   data: {
     projectId: string;
@@ -1810,7 +1716,6 @@ async createLaunchpadAlert(
   });
 }
 
-// Get all alerts for the user
 async getLaunchpadAlerts(token: string): Promise<{
   success: boolean;
   alerts: LaunchpadAlert[];
@@ -1824,7 +1729,6 @@ async getLaunchpadAlerts(token: string): Promise<{
   });
 }
 
-// Get a specific alert
 async getLaunchpadAlert(alertId: string, token: string): Promise<{
   success: boolean;
   alert: LaunchpadAlert;
@@ -1837,7 +1741,6 @@ async getLaunchpadAlert(alertId: string, token: string): Promise<{
   });
 }
 
-// Update an alert
 async updateLaunchpadAlert(
   alertId: string,
   data: {
@@ -1862,7 +1765,6 @@ async updateLaunchpadAlert(
   });
 }
 
-// Delete an alert
 async deleteLaunchpadAlert(alertId: string, token: string): Promise<{
   success: boolean;
   message: string;
@@ -1875,7 +1777,6 @@ async deleteLaunchpadAlert(alertId: string, token: string): Promise<{
   });
 }
 
-// Get project comments
 async getLaunchpadComments(
   projectId: string,
   params?: { page?: number; limit?: number }
@@ -1941,7 +1842,6 @@ async toggleLaunchpadCommentLike(
   });
 }
 
-// Get top holders for a project
 async getLaunchpadHolders(
   projectId: string,
   params?: { limit?: number }
@@ -1959,8 +1859,6 @@ async getLaunchpadHolders(
     method: 'GET',
   });
 }
-
-// ====== LAUNCHPAD ON-CHAIN API (Solana Blockchain) ======
 
 // Create unsigned token creation transaction (for wallet signing)
 async createLaunchpadTokenOnChain(
@@ -2014,7 +1912,6 @@ async submitLaunchpadTransaction(
   });
 }
 
-// Get transaction status
 async getLaunchpadTransactionStatus(
   signature: string
 ): Promise<{
@@ -2125,7 +2022,6 @@ async createLaunchpadMigrateTransaction(
   });
 }
 
-// Get on-chain bonding curve state for a project
 async getLaunchpadBondingCurveState(
   projectId: string
 ): Promise<{
@@ -2141,7 +2037,6 @@ async getLaunchpadBondingCurveState(
   });
 }
 
-// Get user's on-chain position for a project
 async getLaunchpadUserPosition(
   projectId: string,
   token: string
@@ -2159,9 +2054,6 @@ async getLaunchpadUserPosition(
   });
 }
 
-// ====== LAUNCHPAD CUSTODIAL API (Swarp Foundation Wallet - Server-side signing) ======
-
-// Get user's Swarp Foundation wallet info for launchpad
 async getLaunchpadCustodialWallet(
   token: string
 ): Promise<LaunchpadCustodialWalletResponse> {
@@ -2222,8 +2114,6 @@ async sellLaunchpadTokensCustodial(
   });
 }
 
-// ====== Transak Fiat On/Off-Ramp ======
-
 async generateTransakUrl(walletId: string, token: string, data: { type: 'buy' | 'sell', walletAddress?: string, fiatCurrency?: string, cryptoCurrency?: string, fiatAmount?: number }): Promise<{ url: string; type: string; environment: string }> {
   return this.makeRequest(`/wallet/${walletId}/generate-transak-url`, {
     method: 'POST',
@@ -2231,8 +2121,6 @@ async generateTransakUrl(walletId: string, token: string, data: { type: 'buy' | 
     body: JSON.stringify(data),
   });
 }
-
-// ====== Veriff KYC ======
 
 async createVeriffSession(
   token: string,
@@ -2265,8 +2153,6 @@ async getVeriffKycStatus(token: string): Promise<{
     },
   });
 }
-
-  // ─── Staking ────────────────────────────────────────────────────────────
 
   async getStakingPools(token: string) {
     return this.makeRequest('/staking/pools', {
@@ -2421,8 +2307,6 @@ export interface LaunchpadOnChainBalanceResponse {
     totalSolReceived: number;
   };
 }
-
-// ====== CUSTODIAL (Swarp Foundation Wallet) TYPES ======
 
 // Custodial wallet info response
 export interface LaunchpadCustodialWalletResponse {

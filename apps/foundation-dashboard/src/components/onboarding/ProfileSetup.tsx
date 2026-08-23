@@ -49,7 +49,6 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({
         email: email.trim(),
       };
 
-      // Save name/email to backend
       const updated = await apiService.updateUserProfile(payload, token);
 
       // Persist in local storage

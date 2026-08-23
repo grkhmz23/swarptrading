@@ -11,7 +11,6 @@ type RewardState = {
   milestones: RewardResponse[]; // Refer & Earn screen
   yourRewards: RewardResponse[]; // Home screen - Your Rewards
   moreRewards: RewardResponse[]; // Home screen - More Rewards
-  // Loading states
   loading: boolean;
   loadingYourRewards: boolean;
   loadingMoreRewards: boolean;
@@ -33,7 +32,6 @@ const initialState: RewardState = {
   error: null,
 };
 
-// Fetch all rewards
 export const fetchRewards = createAsyncThunk<
   RewardResponse[],
   { userId: string; token: string },
@@ -137,7 +135,6 @@ const rewardSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Fetch All Rewards
       .addCase(fetchRewards.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -155,7 +152,6 @@ const rewardSlice = createSlice({
         state.error = action.payload || "Failed to fetch rewards";
       })
 
-      // Fetch Milestones
       .addCase(fetchMilestones.pending, (state) => {
         state.loadingMilestones = true;
         state.error = null;
@@ -169,7 +165,6 @@ const rewardSlice = createSlice({
         state.error = action.payload || "Failed to fetch milestones";
       })
 
-      // Fetch Your Rewards
       .addCase(fetchYourRewards.pending, (state) => {
         state.loadingYourRewards = true;
         state.error = null;
@@ -183,7 +178,6 @@ const rewardSlice = createSlice({
         state.error = action.payload || "Failed to fetch your rewards";
       })
 
-      // Fetch More Rewards
       .addCase(fetchMoreRewards.pending, (state) => {
         state.loadingMoreRewards = true;
         state.error = null;
@@ -206,7 +200,6 @@ const rewardSlice = createSlice({
         state.claiming = null;
         const { rewardType, claimed } = action.payload;
 
-        // Update in all arrays
         const updateReward = (r: RewardResponse) =>
           r.rewardType === rewardType ? { ...r, claimed } : r;
 

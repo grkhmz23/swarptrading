@@ -36,7 +36,6 @@ const [message, setMessage] = useState("");
     };
   }, [isOpen]);
 
-  // handle escape
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && isOpen) onClose();
@@ -104,12 +103,8 @@ async function handleSubmit(e?: React.FormEvent) {
   setChecking(false);
 }
 
-
-
-
   if (!isOpen) return null;
   
-
   return (
     <div
       aria-modal="true"
@@ -249,8 +244,6 @@ async function handleSubmit(e?: React.FormEvent) {
     ? (t.onboarding?.referralModal?.valid || "Valid!")
     : (t.onboarding?.referralModal?.continue || "Continue")}
 </button>
-
-
 
             </div>
           </form>

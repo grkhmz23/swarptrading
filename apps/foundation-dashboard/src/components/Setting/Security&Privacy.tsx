@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import SettingsTile from "./shared/SettingsTile";
 import ChangePasscodeModal from "./ChangePasscodeModal";
 import { apiService } from "@/services/api";
@@ -14,7 +14,6 @@ export default function SecurityPrivacy() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const router = useRouter();
-  // ===== Handle Change Passcode =====
   const handlePasscodeSubmit = async (data: { oldPasscode: string; newPasscode: string }) => {
     const token = localStorage.getItem("swarp_fd_access_token");
     if (!token) throw new Error("Please login first");
@@ -32,7 +31,6 @@ export default function SecurityPrivacy() {
     }
   };
 
-  // ===== Handle Delete Account =====
 const handleDeleteAccount = async () => {
   const token = localStorage.getItem("swarp_fd_access_token");
   if (!token) {

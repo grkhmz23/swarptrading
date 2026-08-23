@@ -45,10 +45,6 @@ import {
   MarketData,
   Transaction,
   JupiterToken,
-  // These types are used by extracted section components:
-  // TokenFilter,
-  // CustomFilters,
-  // TransactionFilterState,
 } from '@/types/home';
 
 const navigationItemsBase = [
@@ -65,7 +61,6 @@ const navigationItemsBase = [
 export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
   const t = useT();
 
-  // Create translated navigation items with fallback
   const navigationItems = navigationItemsBase.map(item => ({
     name: (t.navigation as Record<string, string> | undefined)?.[item.key] || item.key.charAt(0).toUpperCase() + item.key.slice(1),
     key: item.key,
@@ -73,7 +68,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
     route: item.route
   }));
 
-  // Create translated settings sidebar items with fallback
   const SETTINGS_INNER_ITEMS = SETTINGS_INNER_ITEMS_BASE.map(item => ({
     id: item.id,
     label: t.settings?.sidebar?.[item.labelKey] || item.labelKey,
@@ -238,7 +232,6 @@ useEffect(() => {
   fetchRates();
 }, []);
 
-// Fetch Jupiter tokens list with volume data from DexScreener
 useEffect(() => {
   const fetchJupiterTokens = async () => {
     try {
@@ -247,7 +240,6 @@ useEffect(() => {
       const response = await apiService.getTokensWithVolume({ limit: 100 });
       if (response.tokens) {
         setJupiterTokens(response.tokens);
-        console.log(`Jupiter tokens with volume fetched: ${response.tokens.length} tokens (source: ${response.volumeDataSource})`);
       }
     } catch (err) {
       console.error('Failed to fetch Jupiter tokens with volume:', err);
@@ -256,7 +248,6 @@ useEffect(() => {
         const fallbackResponse = await apiService.getAllJupiterTokens({ limit: 100 });
         if (fallbackResponse.tokens) {
           setJupiterTokens(fallbackResponse.tokens);
-          console.log(`Fallback: Jupiter tokens fetched: ${fallbackResponse.tokens.length} tokens`);
         }
       } catch {
         // Final fallback to basic tokens
@@ -273,7 +264,6 @@ useEffect(() => {
   fetchJupiterTokens();
 }, []);
 
-// Fetch token prices from Jupiter API
 useEffect(() => {
   const fetchTokenPrices = async (isInitial = false) => {
     try {
@@ -285,7 +275,6 @@ useEffect(() => {
       const response = await apiService.getTokenPrices(priceSymbols);
       if (response.prices) {
         setTokenPrices(response.prices);
-        console.log('Token prices fetched:', Object.keys(response.prices).length);
       }
     } catch (err) {
       console.error('Failed to fetch token prices:', err);
@@ -546,7 +535,6 @@ useEffect(() => {
 //     icon: "/figma-assets/ethSvg.svg",
 //   },
  
-  
 // ];
 
     // Claim from Home: dispatch redux action using rewardType
@@ -616,7 +604,7 @@ useEffect(() => {
       }
       
       setChartData(mockData);
-      console.log('Using fallback chart data due to API error');
+      console.error('Using fallback chart data due to API error');
     }
   }, [selectedPeriod]);
 
@@ -731,11 +719,9 @@ useEffect(() => {
         return;
       }
 
-      // Load Solana transactions from backend
       const data = await apiService.getTransactionHistory(wallet.id, token);
       const solanaTransactions = data.transactions || [];
       
-      // Load MoonPay transactions from localStorage
       const moonPayTransactions = JSON.parse(localStorage.getItem('swarp_fd_moonpay_txs') || '[]');
       
       // Convert MoonPay transactions to match the existing format
@@ -777,7 +763,6 @@ useEffect(() => {
     loadMainnetBalance();
     // loadTokenBalances(); // Load token balances including SWARP - commented out
 
-    // Set up interval for real-time price updates
     const interval = setInterval(() => {
       loadMarketData();
       loadMainnetBalance(); // Also check mainnet balance periodically
@@ -871,8 +856,6 @@ useEffect(() => {
   const loadWalletData = async () => {
     try {
       const token = localStorage.getItem('swarp_fd_access_token');
-      console.log('🔍 Debug - Loading wallet data:');
-      console.log('- Token present:', token ? 'YES' : 'NO');
       
       if (!token) {
         console.error('❌ No authentication token found');
@@ -883,20 +866,15 @@ useEffect(() => {
       // Get wallet data from localStorage first (faster)
       const storedWallet = localStorage.getItem('swarp_fd_wallet');
       if (storedWallet) {
-        console.log('📱 Using cached wallet data while fetching fresh data');
         setWallet(JSON.parse(storedWallet));
       }
 
       // Then fetch fresh data from API
-      console.log('🌐 Making API call to /wallet endpoint');
       const wallets = await apiService.getUserWallets(token);
-      console.log('✅ API call successful, received wallets:', wallets.length);
       if (wallets.length > 0) {
         setWallet(wallets[0]);
         localStorage.setItem('swarp_fd_wallet', JSON.stringify(wallets[0]));
-        console.log('💾 Wallet data updated and cached');
 
-        // Fetch portfolio value from token balances
         try {
           const tokenBalancesResponse = await apiService.getTokenBalances(wallets[0].id, token);
           if (tokenBalancesResponse && typeof tokenBalancesResponse.portfolioValue === 'number') {
@@ -922,7 +900,7 @@ useEffect(() => {
         try {
           setWallet(JSON.parse(storedWallet));
           setError(null); // Clear error if we have fallback data
-          console.log('🔄 Using cached wallet data due to API error');
+          console.error('🔄 Using cached wallet data due to API error');
         } catch {
           console.error('💥 Failed to parse cached wallet data');
           const apiError = error as { message?: string };
@@ -975,7 +953,7 @@ useEffect(() => {
       };
       
       setMarketData(fallbackData);
-      console.log('Using fallback market data due to API error');
+      console.error('Using fallback market data due to API error');
     } finally {
       setPriceLoading(false);
     }
@@ -1031,7 +1009,6 @@ useEffect(() => {
               );
   };
 
-
   const handleCopyAddress = async () => {
     if (wallet) {
       try {
@@ -1077,7 +1054,6 @@ useEffect(() => {
 
   const handleSendSuccess = (newBalance: number) => {
     setWallet(prev => prev ? { ...prev, balance: newBalance } : null);
-    // Update localStorage
     if (wallet) {
       const updatedWallet = { ...wallet, balance: newBalance };
       localStorage.setItem('swarp_fd_wallet', JSON.stringify(updatedWallet));
@@ -1124,14 +1100,12 @@ const handleNotificationClick = (notification: Notification) => {
   setTargetTransactionId(transactionId);
 };
 
-
   const handleNavigationClick = (itemName: string, subsection?: string) => {
     setCurrentSection(itemName);
     // Clear target transaction ID when switching sections
     if (itemName !== 'Transactions') {
       setTargetTransactionId(null);
     }
-    // Handle settings navigation
     if (itemName === 'Settings' && subsection) {
       localStorage.setItem('swarp_fd_settings_subsection', subsection);
     } else {
@@ -1400,7 +1374,6 @@ const handleNotificationClick = (notification: Notification) => {
         return;
       }
 
-      // Create a Veriff session via backend
       const response = await apiService.createVeriffSession(token, {
         firstName: userProfile.firstName,
         lastName: userProfile.lastName,
@@ -1410,7 +1383,6 @@ const handleNotificationClick = (notification: Notification) => {
         // Open Veriff verification (InContext SDK modal or new window)
         await veriffService.openVerification(response.sessionUrl, {
           onEvent: (event: string) => {
-            console.log('Veriff event:', event);
             if (event === 'FINISHED') {
               showSuccess(
                 t.onboarding?.verificationSubmitted || 'Verification submitted! We will notify you once reviewed.',

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
 
@@ -21,7 +21,7 @@ export default function Notifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
-  const [unread, setUnread] = useState(0);
+  const [_unread, setUnread] = useState(0);
 
   useEffect(() => {
     fetchNotifications();
@@ -56,7 +56,6 @@ export default function Notifications() {
     try {
       await apiService.markNotificationAsRead(notification.id, token);
 
-      // Update local state
       setNotifications(prev =>
         prev.map(n =>
           n.id === notification.id ? { ...n, isRead: true } : n

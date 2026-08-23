@@ -2,8 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { apiService } from '@/services/api';
-import { Transaction } from '@/types/home';
-import { WalletData } from '@/types/home';
+import { Transaction, WalletData } from "@/types/home";
 
 interface FilterDropdownState {
   dateFilter: string;
@@ -55,11 +54,9 @@ export const useTransactions = (wallet: WalletData | null): UseTransactionsRetur
         return;
       }
 
-      // Load Solana transactions from backend
       const data = await apiService.getTransactionHistory(wallet.id, token);
       const solanaTransactions = data.transactions || [];
 
-      // Load MoonPay transactions from localStorage
       const moonPayTransactions = JSON.parse(localStorage.getItem('swarp_fd_moonpay_txs') || '[]');
 
       // Convert MoonPay transactions to match the existing format

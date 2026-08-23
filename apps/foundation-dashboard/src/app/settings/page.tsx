@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import SettingsLayout from "@/components/Setting/SettingsLayout";
 import { SETTINGS_INNER_ITEMS_BASE } from '@/components/Setting/settingsItems';
 import { useT } from "@/i18n/I18nProvider";
@@ -9,7 +8,6 @@ import type { InnerSidebarItem } from "@/components/Setting/InnerSidebar";
 export default function SettingsPage() {
   const t = useT();
 
-  // Create translated sidebar items with fallbacks
   const translatedItems: InnerSidebarItem[] = SETTINGS_INNER_ITEMS_BASE.map((item) => ({
     id: item.id,
     label: t.settings?.sidebar?.[item.labelKey] || item.labelKey,
@@ -22,4 +20,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

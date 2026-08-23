@@ -77,7 +77,6 @@ export const TradeSection: React.FC<TradeSectionProps> = ({
     return h.toLocaleString();
   };
 
-  // Get filtered tokens
   const getFilteredTokens = () => {
     return jupiterTokens
       // Search filter

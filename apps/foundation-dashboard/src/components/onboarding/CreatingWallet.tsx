@@ -22,20 +22,15 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
     if (startedRef.current) return;
     startedRef.current = true;
 
-    console.log('🚀 Starting wallet creation process...');
-
     const createWallet = async () => {
       try {
-        console.log('🔍 All localStorage items:', {
+        console.error('🔍 All localStorage items:', {
           accessToken: localStorage.getItem('swarp_fd_access_token') ? 'present' : 'missing',
           isNewUser: localStorage.getItem('swarp_fd_is_new_user'),
           pendingPhoneNumber: localStorage.getItem('swarp_fd_pending_phone'),
           allKeys: Object.keys(localStorage)
         });
         
-        console.log('🎯 CreateWallet function starting...');
-
-        // Get token from localStorage
         const token = localStorage.getItem('swarp_fd_access_token');
         
         if (!token) {
@@ -60,12 +55,6 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
         const isNewUserValue = localStorage.getItem('swarp_fd_is_new_user');
         const userIsNew = isNewUserValue === 'true';
         setIsNewUser(userIsNew);
-        console.log('🔍 Debug isNewUser:', {
-          isNewUserValue,
-          userIsNew,
-          type: typeof isNewUserValue
-        });
-        console.log(userIsNew ? '🆕 New user - creating wallet...' : '👤 Existing user - fetching wallet...');
 
         // For existing users, also check if they have a wallet PIN
         let hasPIN = false;
@@ -81,86 +70,42 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
         let walletData;
 
         if (userIsNew) {
-          // Create new wallet for new user
-          console.log('🔄 Calling wallet creation API...');
           const result = await apiService.createWallet({
             name: 'Custodial Wallet',
             description: 'Swarp Foundation managed wallet'
           }, token);
 
           walletData = result.wallet;
-          console.log('✅ Wallet created successfully:', {
-            id: walletData.id,
-            publicKey: walletData.publicKey,
-            name: walletData.name,
-            status: walletData.status,
-            balance: walletData.balance
-          });
 
         } else {
-          // Fetch existing wallet for returning user
-          console.log('🔄 Fetching existing wallets...');
           const wallets = await apiService.getUserWallets(token);
           
           if (wallets.length > 0) {
             walletData = wallets[0]; // Get the first (primary) wallet
-            console.log('✅ Existing wallet found:', {
-              id: walletData.id,
-              publicKey: walletData.publicKey,
-              name: walletData.name,
-              status: walletData.status,
-              balance: walletData.balance
-            });
           } else {
             // Existing user but no wallet found - create one
-            console.log('⚠️ Existing user has no wallet, creating one...');
             const result = await apiService.createWallet({
               name: 'Custodial Wallet',
               description: 'Swarp Foundation managed wallet'
             }, token);
 
             walletData = result.wallet;
-            console.log('✅ Wallet created for existing user:', {
-              id: walletData.id,
-              publicKey: walletData.publicKey,
-              name: walletData.name,
-              status: walletData.status,
-              balance: walletData.balance
-            });
           }
         }
 
-        console.log('📦 About to store wallet data and proceed to initialization...');
-        
         // Store wallet info in localStorage for future use
         localStorage.setItem('swarp_fd_wallet', JSON.stringify(walletData));
         
         // Store user flow information for next screens
         localStorage.setItem('swarp_fd_user_has_pin', hasPIN.toString());
         
-        console.log('💾 Wallet data stored, proceeding to initialization logic...');
-        console.log('🔄 NEW VERSION LOADED - setTimeout should be removed!');
-        
         // Initialize wallet on Solana blockchain for new users only
-        console.log('💡 Wallet initialization decision:', {
-          userIsNew,
-          shouldInitialize: userIsNew,
-          walletId: walletData.id
-        });
         
         // Always try to initialize wallet on blockchain (for both new and existing users)
         // This ensures existing wallets that weren't previously initialized get set up
-        console.log('🔄 Checking/initializing wallet on Solana blockchain...');
         try {
           const initResult = await apiService.initializeWallet(walletData.id, token);
-          console.log('✅ Wallet initialized on Solana:', {
-            balance: initResult.balance,
-            signature: initResult.signature,
-            explorerUrl: initResult.explorerUrl,
-            walletUrl: initResult.walletUrl
-          });
           
-          // Update wallet data with new balance
           walletData.balance = initResult.balance;
           localStorage.setItem('swarp_fd_wallet', JSON.stringify(walletData));
           
@@ -170,11 +115,8 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
           // This could mean the wallet is already initialized, which is fine
         }
         
-        // Clean up temporary flags
         localStorage.removeItem('swarp_fd_is_new_user');
         localStorage.removeItem('swarp_fd_pending_phone');
-        
-        console.log('🏁 All operations complete, calling onComplete...');
         
         // Complete the flow
         if (onComplete) {
@@ -182,7 +124,6 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
         }
 
       } catch (error: unknown) {
-        // Handle different error types
         const apiError = error as { statusCode?: number; message?: string };
         if (apiError.statusCode === 401 || (apiError.message && apiError.message.includes('Unauthorized'))) {
           setError(t.onboarding?.creatingWallet?.errors?.sessionExpired || 'Your session has expired. Please go back and verify your phone number again.');

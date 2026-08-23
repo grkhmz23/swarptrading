@@ -4,8 +4,7 @@ import type {
   CrudFilters,
 } from "@refinedev/core";
 import { useTable } from "@refinedev/react-table";
-import type { ColumnDef } from "@tanstack/react-table";
-import { flexRender } from "@tanstack/react-table";
+import { flexRender, type ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -76,12 +75,10 @@ export const GenericList: React.FC<GenericListProps> = ({
             );
           }
 
-          // Handle isVerified field - always show N/A
           if (field === 'isVerified') {
             return <span className="text-muted-foreground">N/A</span>;
           }
 
-          // Handle different data types
           if (typeof value === 'boolean') {
             return <Badge variant={value ? 'default' : 'destructive'}>{value ? "Yes" : "No"}</Badge>;
           }
@@ -145,7 +142,6 @@ export const GenericList: React.FC<GenericListProps> = ({
     [navigate, basePath, fieldColumns, canDelete, canEdit, resource, title]
   );
 
-  // Build filters array
   const filters: CrudFilters = React.useMemo(() => {
     const filterArray: CrudFilters = [];
     if (searchTerm) {
@@ -159,12 +155,14 @@ export const GenericList: React.FC<GenericListProps> = ({
   }, [searchTerm]);
 
   const {
-    getHeaderGroups,
-    getRowModel,
+    reactTable: {
+      getHeaderGroups,
+      getRowModel,
+    },
     refineCore: {
-      tableQueryResult: { data: tableData, isLoading },
-      current,
-      setCurrent,
+      tableQuery: { data: tableData, isLoading },
+      currentPage,
+      setCurrentPage,
       pageCount,
       pageSize,
       setPageSize,
@@ -174,7 +172,7 @@ export const GenericList: React.FC<GenericListProps> = ({
     refineCoreProps: {
       resource,
       pagination: {
-        current: 1,
+        currentPage: 1,
         pageSize: 10,
       },
       filters: {
@@ -185,8 +183,8 @@ export const GenericList: React.FC<GenericListProps> = ({
 
   // Reset to page 1 when search changes
   React.useEffect(() => {
-    setCurrent(1);
-  }, [searchTerm, setCurrent]);
+    setCurrentPage(1);
+  }, [searchTerm, setCurrentPage]);
 
   const totalResults = tableData?.total || 0;
 
@@ -298,14 +296,14 @@ export const GenericList: React.FC<GenericListProps> = ({
                 </select>
               </div>
               <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-                Page {current} of {pageCount || 1}
+                Page {currentPage} of {pageCount || 1}
               </div>
               <div className="flex items-center space-x-2">
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setCurrent(1)}
-                  disabled={current === 1}
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
                 >
                   <span className="sr-only">Go to first page</span>
                   <ChevronLeftIcon className="h-4 w-4" />
@@ -314,8 +312,8 @@ export const GenericList: React.FC<GenericListProps> = ({
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setCurrent(current - 1)}
-                  disabled={current === 1}
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                  disabled={currentPage === 1}
                 >
                   <span className="sr-only">Go to previous page</span>
                   <ChevronLeftIcon className="h-4 w-4" />
@@ -323,8 +321,8 @@ export const GenericList: React.FC<GenericListProps> = ({
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
-                  onClick={() => setCurrent(current + 1)}
-                  disabled={current === pageCount}
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                  disabled={currentPage === pageCount}
                 >
                   <span className="sr-only">Go to next page</span>
                   <ChevronRightIcon className="h-4 w-4" />
@@ -332,8 +330,8 @@ export const GenericList: React.FC<GenericListProps> = ({
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setCurrent(pageCount || 1)}
-                  disabled={current === pageCount}
+                  onClick={() => setCurrentPage(pageCount || 1)}
+                  disabled={currentPage === pageCount}
                 >
                   <span className="sr-only">Go to last page</span>
                   <ChevronRightIcon className="h-4 w-4" />

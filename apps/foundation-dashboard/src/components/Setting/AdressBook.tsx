@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import SettingsTile from "./shared/SettingsTile";
 import AddContactModal from "./AddContactModal";
 import { useDispatch, useSelector } from "react-redux";
@@ -51,7 +51,6 @@ export default function AddressBook() {
     if (typeof window === "undefined") return;
     setAuthToken(localStorage.getItem("swarp_fd_access_token"));
 
-    // Check for initial search query from header
     const initialQuery = localStorage.getItem("swarp_fd_address_book_search") || "";
     setSearchQuery(initialQuery);
 
@@ -77,7 +76,6 @@ export default function AddressBook() {
     );
   });
 
-  // Fetch contacts whenever authentication data changes
   useEffect(() => {
     if (!authToken || !userId) return;
     dispatch(fetchContacts({ userId, token: authToken }));

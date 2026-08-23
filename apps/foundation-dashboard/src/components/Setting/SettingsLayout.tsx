@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import InnerSidebar, { InnerSidebarItem } from "./InnerSidebar";
 import ReferSection from "./Refer&Earn/ReferSection";
 import General from "./General";

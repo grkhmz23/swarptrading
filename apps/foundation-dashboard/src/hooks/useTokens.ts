@@ -57,7 +57,6 @@ export const useTokens = (): UseTokensReturn => {
 
   const hasActiveCustomFilters = Object.values(appliedFilters).some(v => v !== '');
 
-  // Fetch Jupiter tokens list with volume data from DexScreener
   const fetchJupiterTokens = useCallback(async () => {
     try {
       setJupiterTokensLoading(true);
@@ -65,7 +64,6 @@ export const useTokens = (): UseTokensReturn => {
       const response = await apiService.getTokensWithVolume({ limit: 100 });
       if (response.tokens) {
         setJupiterTokens(response.tokens);
-        console.log(`Jupiter tokens with volume fetched: ${response.tokens.length} tokens (source: ${response.volumeDataSource})`);
       }
     } catch (err) {
       console.error('Failed to fetch Jupiter tokens with volume:', err);
@@ -74,7 +72,6 @@ export const useTokens = (): UseTokensReturn => {
         const fallbackResponse = await apiService.getAllJupiterTokens({ limit: 100 });
         if (fallbackResponse.tokens) {
           setJupiterTokens(fallbackResponse.tokens);
-          console.log(`Fallback: Jupiter tokens fetched: ${fallbackResponse.tokens.length} tokens`);
         }
       } catch {
         // Final fallback to basic tokens
@@ -89,7 +86,6 @@ export const useTokens = (): UseTokensReturn => {
     }
   }, []);
 
-  // Fetch token prices from Jupiter API
   const fetchTokenPrices = useCallback(async (isInitial = false) => {
     try {
       // Get price symbols from loaded Jupiter tokens, fallback to basic tokens
@@ -100,7 +96,6 @@ export const useTokens = (): UseTokensReturn => {
       const response = await apiService.getTokenPrices(priceSymbols);
       if (response.prices) {
         setTokenPrices(response.prices);
-        console.log('Token prices fetched:', Object.keys(response.prices).length);
       }
     } catch (err) {
       console.error('Failed to fetch token prices:', err);
@@ -187,7 +182,6 @@ export const useTokens = (): UseTokensReturn => {
     return filtered;
   }, [jupiterTokens, tokenSearchQuery, tokenFilter, appliedFilters]);
 
-  // Fetch Jupiter tokens on mount
   useEffect(() => {
     fetchJupiterTokens();
   }, [fetchJupiterTokens]);

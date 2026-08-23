@@ -37,7 +37,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({
     const maxPrice = Math.max(...prices);
     const priceRange = maxPrice - minPrice || 1;
 
-    // Create path for the line chart
     const pathData = data
       .map((point, index) => {
         const x = (index / (data.length - 1)) * chartWidth;
@@ -48,10 +47,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({
 
     // Create gradient and area path only if showGradient is true
     if (showGradient) {
-      // Create area path for the gradient fill
       const areaData = `${pathData} L ${chartWidth} ${height} L 0 ${height} Z`;
 
-      // Create gradient
       const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
       const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
       gradient.setAttribute('id', 'chartGradient');
@@ -75,14 +72,12 @@ export const PriceChart: React.FC<PriceChartProps> = ({
       defs.appendChild(gradient);
       svg.appendChild(defs);
 
-      // Create area path
       const areaPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       areaPath.setAttribute('d', areaData);
       areaPath.setAttribute('fill', 'url(#chartGradient)');
       svg.appendChild(areaPath);
     }
 
-    // Create line path with smoother appearance
     const linePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     linePath.setAttribute('d', pathData);
     linePath.setAttribute('stroke', color);

@@ -29,11 +29,10 @@ export const GenericEdit: React.FC<GenericEditProps> = ({
   const navigate = useNavigate();
   const { id } = useParams();
   
-  // Initialize form data state
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   
   // Hooks for data fetching and mutations
-  const { data, isLoading: dataLoading, error } = useOne({
+  const { result: record, query: { isLoading: dataLoading, error } } = useOne({
     resource,
     id: id as string,
     queryOptions: {
@@ -41,28 +40,30 @@ export const GenericEdit: React.FC<GenericEditProps> = ({
     },
   });
 
-  const { mutate: updateRecord, isLoading: updateLoading } = useUpdate();
-  const { mutate: createRecord, isLoading: createLoading } = useCreate();
+  const updateMutation = useUpdate();
+  const createMutation = useCreate();
+  const { mutate: updateRecord } = updateMutation;
+  const { mutate: createRecord } = createMutation;
+  const updateLoading = updateMutation.mutation.isPending;
+  const createLoading = createMutation.mutation.isPending;
   
   const isSubmitting = updateLoading || createLoading;
 
   // Initialize form data when record is loaded
   useEffect(() => {
-    if (data?.data) {
+    if (record) {
       const initialData: Record<string, unknown> = {};
       fields.forEach(field => {
-        initialData[field.key] = data.data[field.key] || '';
+        initialData[field.key] = record[field.key] || '';
       });
       setFormData(initialData);
     }
-  }, [data, fields]);
+  }, [record, fields]);
 
-  // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     if (id) {
-      // Update existing record
       updateRecord(
         {
           resource,
@@ -76,7 +77,6 @@ export const GenericEdit: React.FC<GenericEditProps> = ({
         }
       );
     } else {
-      // Create new record
       createRecord(
         {
           resource,
@@ -91,7 +91,6 @@ export const GenericEdit: React.FC<GenericEditProps> = ({
     }
   };
 
-  // Handle input changes
   const handleInputChange = (key: string, value: unknown) => {
     setFormData(prev => ({
       ...prev,

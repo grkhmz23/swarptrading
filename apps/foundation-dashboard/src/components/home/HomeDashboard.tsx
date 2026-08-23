@@ -6,14 +6,7 @@ import { BalanceTile } from './ui/BalanceTile';
 import { RewardsList } from './ui/RewardCard';
 import CryptoCard from './ui/CryptoCard';
 import { useT } from "@/i18n/I18nProvider";
-// For BalanceTile items
-export interface TileItem {
-  id: string | number;
-  title: string;
-  balance: string;
-  currentPrice: string;
-  icon: string;
-}
+import type { TileItem } from '@/types/home';
 
 // For CryptoCard items
 export interface CryptoItem {

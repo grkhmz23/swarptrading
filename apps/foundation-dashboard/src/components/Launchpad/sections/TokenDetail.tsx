@@ -118,7 +118,6 @@ type TabType = "chart" | "comments" | "trades" | "holders";
 // Format helpers
 const formatPrice = (price: number | string | undefined | null): string => {
   if (price === undefined || price === null) return "0 SOL";
-  // Handle string values
   if (typeof price === "string") {
     if (price.includes("$") || price.includes("SOL")) return price;
     const parsed = parseFloat(price.replace(/[^0-9.-]/g, ""));
@@ -136,21 +135,6 @@ const formatPrice = (price: number | string | undefined | null): string => {
   return `${price.toFixed(2)} SOL`;
 };
 
-const formatMarketCap = (marketCap: number | string | undefined | null): string => {
-  if (marketCap === undefined || marketCap === null) return "$0";
-  // Handle string values (like "$3.2M" or "3200000")
-  if (typeof marketCap === "string") {
-    // If already formatted, return as-is
-    if (marketCap.includes("$")) return marketCap;
-    const parsed = parseFloat(marketCap.replace(/[^0-9.-]/g, ""));
-    if (isNaN(parsed)) return "$0";
-    marketCap = parsed;
-  }
-  if (typeof marketCap !== "number" || isNaN(marketCap)) return "$0";
-  if (marketCap >= 1000000) return `$${(marketCap / 1000000).toFixed(1)}M`;
-  if (marketCap >= 1000) return `$${(marketCap / 1000).toFixed(1)}K`;
-  return `$${marketCap.toFixed(0)}`;
-};
 
 const formatPriceChange = (change: number | string | undefined | null): string => {
   if (change === undefined || change === null) return "0.00%";
@@ -271,7 +255,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   const [isLoadingHolders, setIsLoadingHolders] = useState(false);
 
   // Portfolio state - user's investment in this specific project
-  const [userInvestment, setUserInvestment] = useState<{
+  const [_userInvestment, setUserInvestment] = useState<{
     tokenBalance: string;
     totalSolInvested: string;
     averageBuyPrice: string;
@@ -280,10 +264,10 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     unrealizedPnlPercent: string;
     tradeCount: number;
   } | null>(null);
-  const [isLoadingPortfolio, setIsLoadingPortfolio] = useState(false);
+  const [_isLoadingPortfolio, setIsLoadingPortfolio] = useState(false);
 
   // User's trade history for this project
-  const [userTradeHistory, setUserTradeHistory] = useState<Array<{
+  const [_userTradeHistory, setUserTradeHistory] = useState<Array<{
     id: string;
     type: 'buy' | 'sell';
     solAmount: string;
@@ -292,7 +276,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     createdAt: string;
     transactionHash?: string;
   }>>([]);
-  const [isLoadingTradeHistory, setIsLoadingTradeHistory] = useState(false);
+  const [_isLoadingTradeHistory, setIsLoadingTradeHistory] = useState(false);
   const [isWatching, setIsWatching] = useState(false);
   const [isTogglingWatchlist, setIsTogglingWatchlist] = useState(false);
 
@@ -314,7 +298,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     refs[tab]?.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  // Fetch wallet balance
   const fetchWalletBalance = useCallback(async () => {
     try {
       const accessToken = localStorage.getItem("swarp_fd_access_token");
@@ -329,7 +312,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     }
   }, []);
 
-  // Fetch project details
   const fetchProject = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -345,12 +327,23 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     }
   }, [projectId]);
 
-  // Fetch trades for the project
   const fetchTrades = useCallback(async () => {
     setIsLoadingTrades(true);
     try {
-      const response = await apiService.getLaunchpadProjectTrades(projectId, { limit: 50 }) as unknown as { trades: typeof trades };
-      setTrades(response.trades || []);
+      const response = await apiService.getLaunchpadProjectTrades(projectId, { limit: 50 });
+      setTrades(response.trades.map((trade) => ({
+        id: trade.id,
+        type: trade.type,
+        solAmount: String(trade.amount),
+        tokenAmount: String(trade.tokenAmount),
+        pricePerToken: String(trade.price),
+        walletAddress: trade.trader,
+        user: trade.traderAvatar
+          ? { id: trade.trader, profilePicture: trade.traderAvatar }
+          : undefined,
+        createdAt: trade.timestamp,
+        transactionHash: trade.signature,
+      })));
     } catch (err) {
       console.error("Failed to fetch trades:", err);
       setTrades([]);
@@ -359,12 +352,20 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     }
   }, [projectId]);
 
-  // Fetch holders for the project
   const fetchHolders = useCallback(async () => {
     setIsLoadingHolders(true);
     try {
-      const response = await apiService.getLaunchpadHolders(projectId, { limit: 50 }) as unknown as { holders: typeof holders };
-      setHolders(response.holders || []);
+      const response = await apiService.getLaunchpadHolders(projectId, { limit: 50 });
+      setHolders(response.holders.map((holder, index) => ({
+        rank: index + 1,
+        walletAddress: holder.address,
+        tokenAmount: String(holder.balance),
+        valueUsd: "0",
+        percentage: String(holder.percentage),
+        user: holder.username || holder.avatar
+          ? { id: holder.address, username: holder.username, profilePicture: holder.avatar }
+          : undefined,
+      })));
     } catch (err) {
       console.error("Failed to fetch holders:", err);
       setHolders([]);
@@ -373,7 +374,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     }
   }, [projectId]);
 
-  // Fetch user's portfolio/investment for this project
   const fetchUserPortfolio = useCallback(async () => {
     setIsLoadingPortfolio(true);
     try {
@@ -412,7 +412,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     }
   }, [projectId]);
 
-  // Fetch user's trade history for this project
   const fetchUserTradeHistory = useCallback(async () => {
     setIsLoadingTradeHistory(true);
     try {
@@ -445,7 +444,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     }
   }, [projectId]);
 
-  // Fetch watchlist status for this project
   const fetchWatchlistStatus = useCallback(async () => {
     try {
       const accessToken = localStorage.getItem("swarp_fd_access_token");
@@ -471,14 +469,11 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     // Fetch trades and holders on initial load (all sections are visible)
     fetchTrades();
     fetchHolders();
-    // Fetch user-specific data
     fetchUserPortfolio();
     fetchUserTradeHistory();
-    // Fetch watchlist status
     fetchWatchlistStatus();
   }, [fetchProject, fetchWalletBalance, fetchTrades, fetchHolders, fetchUserPortfolio, fetchUserTradeHistory, fetchWatchlistStatus]);
 
-  // Handle watchlist toggle
   const handleToggleWatchlist = async () => {
     const accessToken = localStorage.getItem("swarp_fd_access_token");
     if (!accessToken) {
@@ -551,7 +546,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     return () => clearTimeout(timer);
   }, [tokenAmount, getQuote]);
 
-  // Handle buy/sell execution
   const handleTrade = async () => {
     if (!project || !tokenAmount || parseFloat(tokenAmount) <= 0) {
       setTradeError(t.launchpad?.tokenDetail?.toast?.enterValidAmount || "Please enter a valid amount");
@@ -561,7 +555,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
 
     const amount = parseFloat(tokenAmount);
 
-    // Check for insufficient balance before making API call
     if (tradeMode === "buy") {
       if (amount > walletBalance) {
         setTradeError(t.launchpad?.tokenDetail?.toast?.insufficientSol || `Insufficient SOL balance. You have ${walletBalance.toFixed(4)} SOL but trying to spend ${amount.toFixed(4)} SOL.`);
@@ -583,7 +576,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     setShowToast(false);
 
     try {
-      // Get access token from localStorage
       const accessToken = localStorage.getItem("swarp_fd_access_token") || "";
 
       const slippageValue = 5; // Default 5% slippage tolerance
@@ -634,7 +626,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
       fetchUserPortfolio(); // Refresh portfolio to update token balance
     } catch (err: unknown) {
       console.error("Trade failed:", err);
-      // Parse error message to show specific errors
       let errorMessage = t.launchpad?.tokenDetail?.toast?.tradeFailed || "Trade failed. Please try again.";
 
       if (err instanceof Error) {

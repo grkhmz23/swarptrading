@@ -61,20 +61,16 @@ useEffect(() => {
     }
   }
 
-  // Cleanup items
   localStorage.removeItem('swarp_fd_onboarding_step');
   localStorage.removeItem('swarp_fd_user_has_pin');
   localStorage.removeItem('swarp_fd_wallet');
 }, []);
 
-
-  // Handle browser back button to redirect to home
   useEffect(() => {
     // Push a state to control back button behavior
     window.history.pushState({ page: 'citizenship' }, '', window.location.pathname);
     
     const handlePopState = (event: PopStateEvent) => {
-      console.log('🔙 Browser back button pressed on citizenship page, redirecting to home');
       event.preventDefault();
       window.location.href = '/';
     };
@@ -100,7 +96,6 @@ useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!isDropdownOpen) return;
       
-      // Handle typing for search
       if (event.key.length === 1 && /[a-zA-Z ]/.test(event.key)) {
         setSearchTerm(prev => prev + event.key);
       } else if (event.key === 'Backspace') {
@@ -154,12 +149,10 @@ useEffect(() => {
     try {
       const referralCode = localStorage.getItem('swarp_fd_referral_code') || '';
       if (!referralCode || referralCode.trim() === '') {
-        console.log('No referral code to apply');
         return;
       }
 
       const res = await apiService.applyReferral(token, referralCode);
-      console.log('Referral applied successfully:', res);
       // Optionally store referral info
       localStorage.setItem('swarp_fd_referral_applied', JSON.stringify(res));
     } catch (err: unknown) {
@@ -174,9 +167,6 @@ useEffect(() => {
       return;
     }
 
-    console.log('🔍 Debug - userIdentifier:', userIdentifier);
-    console.log('🔍 Debug - country code:', country.code);
-
     setIsLoading(true);
     setError('');
 
@@ -186,9 +176,6 @@ useEffect(() => {
         country: country.code
       });
 
-      console.log('Country updated successfully:', result);
-      
-      // Update stored user data
       const storedUser = localStorage.getItem('swarp_fd_user');
       if (storedUser) {
         const user = JSON.parse(storedUser);
@@ -374,8 +361,6 @@ useEffect(() => {
               </a>.
             </p>
             
-            
-         
           </div>
         </div>
       </div>

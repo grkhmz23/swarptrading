@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiService, LaunchpadProject } from "@/services/api";
 import TradeModal from "../TradeModal";
 import { useT } from "@/i18n/I18nProvider";
@@ -108,8 +108,8 @@ export default function Portfolio() {
   const [totalBalance, setTotalBalance] = useState("$0.00");
   const [tokensHeld, setTokensHeld] = useState<TokenHolding[]>([]);
   const [isLoadingTokens, setIsLoadingTokens] = useState(true);
-  const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
-  const [isLoadingTradeHistory, setIsLoadingTradeHistory] = useState(true);
+  const [_tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
+  const [_isLoadingTradeHistory, setIsLoadingTradeHistory] = useState(true);
   const [activeProjects, setActiveProjects] = useState<ActiveProject[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   // const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
@@ -180,7 +180,6 @@ export default function Portfolio() {
     }
   }, []);
 
-  // Fetch user's trade history
   const fetchTradeHistory = useCallback(async () => {
     setIsLoadingTradeHistory(true);
     try {
@@ -228,7 +227,6 @@ export default function Portfolio() {
     window.dispatchEvent(new CustomEvent("launchpad-subsection-change", { detail: "request-token" }));
   };
 
-  // Get change color
   const getChangeColor = (change: number) => {
     return change >= 0 ? "#27AE60" : "#EB5757";
   };

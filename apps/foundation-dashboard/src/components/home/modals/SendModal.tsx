@@ -83,6 +83,7 @@ export const SendModal: React.FC<SendModalProps> = ({
       console.error("Failed to fetch Jupiter tokens:", err);
       // Fallback to basic tokens if API fails
       setJupiterTokens([
+        // aislop-ignore-next-line ai-slop/hardcoded-id -- Canonical wrapped SOL mint address, not an environment-specific project identifier.
         { address: 'So11111111111111111111111111111111111111112', symbol: 'SOL', name: 'Solana', decimals: 9, logoURI: SOL_TOKEN.logoURI },
         { address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', symbol: 'USDC', name: 'USD Coin', decimals: 6 },
         { address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', symbol: 'USDT', name: 'Tether', decimals: 6 },
@@ -90,7 +91,6 @@ export const SendModal: React.FC<SendModalProps> = ({
     }
   }, []);
 
-  // Load user's token balances from API
   const loadTokenBalances = useCallback(async () => {
     try {
       const token = localStorage.getItem('swarp_fd_access_token');
@@ -104,7 +104,6 @@ export const SendModal: React.FC<SendModalProps> = ({
     }
   }, [walletId]);
 
-  // Load both Jupiter tokens and user balances
   const loadAllTokenData = useCallback(async () => {
     setIsLoadingTokens(true);
     await Promise.all([loadJupiterTokens(), loadTokenBalances()]);
@@ -164,7 +163,6 @@ export const SendModal: React.FC<SendModalProps> = ({
       return [{ ...SOL_TOKEN, balance: currentBalance }];
     }
 
-    // Update SOL balance with the actual current balance
     const solToken = tokens.find(t => t.symbol === 'SOL');
     if (solToken) {
       solToken.balance = currentBalance;
@@ -185,7 +183,6 @@ export const SendModal: React.FC<SendModalProps> = ({
     return tokens;
   }, [jupiterTokens, tokenBalances, currentBalance]);
 
-  // Get balance for selected token
   const getSelectedTokenBalance = () => {
     if (selectedToken.symbol === 'SOL') {
       return currentBalance;
@@ -210,9 +207,7 @@ export const SendModal: React.FC<SendModalProps> = ({
         return false;
       }
 
-      console.log('Validating address:', { address: address.trim(), hasToken: !!token });
       const result = await apiService.validateSolanaAddress(address.trim(), token);
-      console.log('Validation result:', result);
 
       // Only show message for invalid addresses
       if (!result.valid) {
@@ -270,7 +265,6 @@ export const SendModal: React.FC<SendModalProps> = ({
       return;
     }
 
-    // Validate address before proceeding
     const isAddressValid = await validateAddress(toAddress);
     if (!isAddressValid) {
       setError(t.modals?.send?.errors?.invalidAddress || 'Please enter a valid Solana wallet address');

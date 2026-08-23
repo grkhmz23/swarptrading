@@ -92,7 +92,6 @@ class VeriffService {
         this.currentFrame = sdk.createVeriffFrame({
           url: sessionUrl,
           onEvent: (msg: string) => {
-            console.log('Veriff event:', msg);
             options?.onEvent?.(msg);
           },
           onReload: () => {
@@ -103,7 +102,6 @@ class VeriffService {
             this.currentFrame = sdk.createVeriffFrame({
               url: sessionUrl,
               onEvent: (msg: string) => {
-                console.log('Veriff event (reloaded):', msg);
                 options?.onEvent?.(msg);
               },
             });

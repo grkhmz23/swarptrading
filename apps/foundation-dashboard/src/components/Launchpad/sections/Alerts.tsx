@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import CreateAlertModal from "../CreateAlertModal";
 import { apiService, LaunchpadAlert } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
@@ -19,7 +19,7 @@ export default function Alerts() {
 
   const [alerts, setAlerts] = useState<LaunchpadAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [_error, setError] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<LaunchpadAlert | null>(null);
   const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
@@ -62,7 +62,6 @@ export default function Alerts() {
       .replace("{{plural}}", plural);
   }, [t]);
 
-  // Fetch alerts from API
   const fetchAlerts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -101,20 +100,17 @@ export default function Alerts() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Handle create new alert
   const handleOpenCreateModal = () => {
     setEditingAlert(null);
     setIsCreateModalOpen(true);
   };
 
-  // Handle edit alert
   const handleEditAlert = (alert: LaunchpadAlert) => {
     setEditingAlert(alert);
     setIsCreateModalOpen(true);
     setOpenPopoverId(null);
   };
 
-  // Handle delete alert
   const handleDeleteAlert = async (alertId: string) => {
     try {
       const token = localStorage.getItem("swarp_fd_access_token");
@@ -128,13 +124,11 @@ export default function Alerts() {
     }
   };
 
-  // Handle modal close
   const handleCloseModal = () => {
     setIsCreateModalOpen(false);
     setEditingAlert(null);
   };
 
-  // Handle alert saved
   const handleAlertSaved = () => {
     fetchAlerts();
   };

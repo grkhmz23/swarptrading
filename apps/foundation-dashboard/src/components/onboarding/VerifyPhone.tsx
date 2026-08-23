@@ -25,13 +25,11 @@ const [, setDevelopmentOtp] = useState<string>('');
   const [resendCooldown, setResendCooldown] = useState(0);
 
   useEffect(() => {
-    // Get phone number from localStorage
     const storedPhoneNumber = localStorage.getItem('swarp_fd_pending_phone');
     if (storedPhoneNumber) {
       setPhoneNumber(storedPhoneNumber);
     }
 
-    // Start initial 30-second cooldown timer
     setResendCooldown(30);
     const initialTimer = setInterval(() => {
       setResendCooldown((prev) => {
@@ -50,7 +48,6 @@ const [, setDevelopmentOtp] = useState<string>('');
       setDevelopmentOtp('Using Twilio Verify - Check SMS');
     }
 
-    // Cleanup timer on unmount
     return () => clearInterval(initialTimer);
   }, []);
 
@@ -97,7 +94,6 @@ const [, setDevelopmentOtp] = useState<string>('');
     try {
       await apiService.continueWithPhone(phoneNumber);
       
-      // Start 30-second cooldown
       setResendCooldown(30);
       const cooldownTimer = setInterval(() => {
         setResendCooldown((prev) => {
@@ -154,7 +150,6 @@ const [, setDevelopmentOtp] = useState<string>('');
         otp: verificationCode
       });
 
-      
       // Store the access token
       localStorage.setItem('swarp_fd_access_token', result.token);
       localStorage.setItem('swarp_fd_user', JSON.stringify(result.user));

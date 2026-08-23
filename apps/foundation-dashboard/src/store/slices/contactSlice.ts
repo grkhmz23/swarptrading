@@ -20,12 +20,10 @@ const initialState: ContactsState = {
   error: null,
 };
 
-// Fetch contacts
 export const fetchContacts = createAsyncThunk(
   "contacts/fetchContacts",
   async ({ userId, token }: { userId: string; token: string }) => {
     const res = await apiService.getUserContacts(userId, token);
-    // Return contacts with profilePicture included
     return res.contacts as Contact[];
   }
 );

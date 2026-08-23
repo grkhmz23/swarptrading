@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { useT } from '@/i18n/I18nProvider';
@@ -37,7 +37,7 @@ export default function Home() {
     setIsLoading(false);
   }, []);
 
-  const handleOnboardingComplete = (data: { method: string; email?: string; password?: string }) => {
+  const handleOnboardingComplete = (_data: { method: string; email?: string; password?: string }) => {
     localStorage.setItem('swarp_fd_onboarding_complete', 'true');
     setIsAuthenticated(true);
     router.push('/dashboard');

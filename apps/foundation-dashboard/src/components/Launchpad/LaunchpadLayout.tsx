@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { InnerSidebarItem } from "../Setting/InnerSidebar";
 import { useT } from "@/i18n/I18nProvider";
 import LaunchpadHome from "./sections/LaunchpadHome";
@@ -36,7 +36,6 @@ export default function LaunchpadLayout({ innerItems }: LaunchpadLayoutProps) {
 
   // Listen for changes in the launchpad subsection
   useEffect(() => {
-    // Load initial section on mount
     const storedSection = localStorage.getItem("swarp_fd_launchpad_subsection");
     if (storedSection) {
       setCurrentSection(storedSection);
@@ -67,15 +66,12 @@ export default function LaunchpadLayout({ innerItems }: LaunchpadLayoutProps) {
 
   // Custom onSelect handler for launchpad
   const handleSelect = (sectionId: string) => {
-    // Save to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem("swarp_fd_launchpad_subsection", sectionId);
     }
 
-    // Update state
     setCurrentSection(sectionId);
 
-    // Dispatch custom event
     const event = new CustomEvent("launchpad-subsection-change", {
       detail: sectionId
     });

@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import SettingsTile from "./shared/SettingsTile";
 import Dropdown from "./shared/Dropdown";
 import { useDispatch, useSelector } from "react-redux";
@@ -14,7 +13,6 @@ export default function General() {
   const dispatch = useDispatch();
   const t = useT();
 
-  // Get selected values from Redux
   const selectedCurrency = useSelector((state: RootState) => state.settings.currency);
   const selectedLanguage = useSelector((state: RootState) => state.settings.language);
   const selectedNetwork = useSelector((state: RootState) => state.settings.network);

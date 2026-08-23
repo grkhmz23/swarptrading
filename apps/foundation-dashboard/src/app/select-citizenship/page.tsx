@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { SelectCitizenship } from '@/components/onboarding/SelectCitizenship';
 import { useRouter } from 'next/navigation';
 
@@ -11,9 +10,7 @@ export default function SelectCitizenshipPage() {
     router.back();
   };
 
-  const handleComplete = (country: string) => {
-    console.log('Citizenship selected:', country);
-    console.log('Navigating to creating wallet...');
+  const handleComplete = (_country: string) => {
     // Navigate to creating wallet screen
     router.push('/creating-wallet');
   };

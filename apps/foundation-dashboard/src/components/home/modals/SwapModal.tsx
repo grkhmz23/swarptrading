@@ -91,7 +91,6 @@ export const SwapModal: React.FC<SwapModalProps> = ({
     token.name.toLowerCase().includes(tokenSearchOutput.toLowerCase())
   );
 
-// Fetch tokens from Jupiter API
 const loadTokens = useCallback(async () => {
   try {
     console.log('[SwapModal] Fetching tokens from API...');
@@ -139,7 +138,6 @@ const loadInitialData = useCallback(async () => {
     console.error("Error loading initial data:", error);
   }
 }, [walletId]);
-  // Load tokens on first open
   useEffect(() => {
     if (isOpen && availableTokens.length === 0) {
       loadTokens();

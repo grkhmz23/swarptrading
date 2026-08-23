@@ -60,7 +60,6 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
     setError('');
     
     try {
-      // Validate PIN format before sending
       if (!/^\d{6}$/.test(fullPasscode)) {
         setError(t.onboarding?.enterPasscode?.errors?.pinFormat || 'PIN must be exactly 6 digits');
         return;
@@ -80,7 +79,6 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
         localStorage.setItem('swarp_fd_access_token', result.token);
         localStorage.setItem('swarp_fd_user', JSON.stringify(result.user));
         
-        // Clean up temporary data
         localStorage.removeItem('swarp_fd_login_method');
         localStorage.removeItem('swarp_fd_pending_phone');
         localStorage.removeItem('swarp_fd_user_id_passcode');
@@ -89,8 +87,6 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
          localStorage.removeItem('swarp_fd_pending_profile');
           localStorage.removeItem('swarp_fd_profile_image');
 
-
-        console.log('Direct login successful:', result);
       } else {
         // Existing wallet PIN verification flow (e.g. Google / social login)
         const token = localStorage.getItem('swarp_fd_access_token');
@@ -154,7 +150,6 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
         </div>
       {/* Header */}
      
-      
       <div className='flex-1 flex flex-col'>
         {/* Main Content - Vertically Centered */}
         <div className='flex-1 flex flex-col justify-center items-center'>
@@ -241,8 +236,6 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
               </a>.
             </p>
             
-            
-         
           </div>
         </div>
       </div>

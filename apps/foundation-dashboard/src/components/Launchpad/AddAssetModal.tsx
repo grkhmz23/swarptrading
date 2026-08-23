@@ -30,7 +30,6 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch live projects and user's watchlist
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -41,7 +40,6 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
       const projectsResponse = await apiService.getLaunchpadProjects({ status: "bonding", limit: 50 });
       setLiveProjects(projectsResponse.projects || []);
 
-      // Fetch user's watchlist to know which are already watched
       if (token) {
         try {
           const watchlistResponse = await apiService.getLaunchpadWatchlist(token);
@@ -91,7 +89,6 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
     setSelectedProjects(newSelected);
   };
 
-  // Handle save - add selected projects to watchlist
   const handleSave = async () => {
     const token = localStorage.getItem("swarp_fd_access_token");
 
@@ -124,7 +121,6 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
     }
   };
 
-  // Handle backdrop click
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onClose();

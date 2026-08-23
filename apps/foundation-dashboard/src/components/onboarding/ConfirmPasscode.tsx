@@ -67,14 +67,12 @@ export const ConfirmPasscode: React.FC<ConfirmPasscodeProps> = ({
         setError('');
         
         try {
-          // Save the PIN to the backend
           const token = localStorage.getItem('swarp_fd_access_token');
           if (!token) {
             setError(t.onboarding?.confirmPasscode?.errors?.tokenNotFound || 'Authentication token not found');
             return;
           }
 
-          // Validate PIN format before sending
           if (!/^\d{6}$/.test(fullPasscode)) {
             setError(t.onboarding?.confirmPasscode?.errors?.pinFormat || 'PIN must be exactly 6 digits');
             return;
@@ -189,8 +187,6 @@ export const ConfirmPasscode: React.FC<ConfirmPasscodeProps> = ({
               </a>.
             </p>
             
-            
-         
           </div>
         </div>
       </div>
