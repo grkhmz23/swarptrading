@@ -1,0 +1,9 @@
+// Barrel export for home modals
+export { SendModal } from './SendModal';
+export { ReceiveModal } from './ReceiveModal';
+export { SwapModal } from './SwapModal';
+export { TopUpModal } from './TopUpModal';
+export { NotificationModal } from './NotificationModal';
+export { UsernameModal } from './UsernameModal';
+export { CustomFiltersModal } from './CustomFiltersModal';
+export { FiatFlowModal } from './FiatFlowModal';
