@@ -5,6 +5,7 @@ import Image from "next/image";
 import { apiService, LaunchpadProject } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
 import type { TranslationKeys } from "@/i18n";
+import { cssUrl } from "@/lib/css";
 
 // Types for display (transformed from API response)
 interface FeaturedProject {
@@ -27,6 +28,8 @@ interface LiveProject {
   creatorAvatar?: string;
   createdAt: string;
   marketCap: string;
+  marketCapUsd: number;
+  createdAtMs: number;
   priceChange: number;
   bondingProgress: number;
   description: string;
@@ -34,7 +37,6 @@ interface LiveProject {
 
 // Filter types
 interface FilterState {
-  category: string;
   status: string;
   marketCapMin: string;
   marketCapMax: string;
@@ -44,7 +46,6 @@ interface FilterState {
 }
 
 const defaultFilters: FilterState = {
-  category: "All",
   status: "All",
   marketCapMin: "",
   marketCapMax: "",
@@ -53,9 +54,18 @@ const defaultFilters: FilterState = {
   ageUnit: "hours",
 };
 
-const categoryOptions = ["All", "DeFi", "Gaming", "NFT", "Meme", "Infrastructure", "Social"];
 const statusOptions = ["All", "Bonding", "Migrated"];
 const ageUnitOptions: Array<"hours" | "days" | "weeks"> = ["hours", "days", "weeks"];
+
+/** $1.2K / $3.4M style market cap, consistent for every card. */
+const formatUsdCompact = (value: number | undefined): string => {
+  const n = Number(value) || 0;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n.toFixed(0)}`;
+};
+
+const AGE_UNIT_MS = { hours: 3_600_000, days: 86_400_000, weeks: 604_800_000 } as const;
 
 // Helper function to format time ago
 const formatTimeAgo = (dateString: string): string => {
@@ -78,7 +88,7 @@ const transformToFeaturedProject = (project: LaunchpadProject): FeaturedProject 
   name: project.name,
   ticker: project.ticker,
   imageUrl: project.imageUrl || "/figma-assets/launchpad/featured-1.png",
-  marketCap: project.marketCapFormatted || `$${(project.marketCap / 1000000).toFixed(1)}M`,
+  marketCap: project.marketCapFormatted || formatUsdCompact(project.marketCap),
   age: formatTimeAgo(project.createdAt),
   isMigrated: project.status === "migrated",
 });
@@ -107,9 +117,11 @@ const transformToLiveProject = (project: LaunchpadProject, noDescText: string = 
     creator: creatorName,
     creatorAvatar: creatorAvatar || project.creatorAvatar,
     createdAt: formatTimeAgo(project.createdAt),
-    marketCap: project.marketCapFormatted || `$${(project.marketCap / 1000).toFixed(1)}K`,
+    createdAtMs: new Date(project.createdAt).getTime(),
+    marketCap: project.marketCapFormatted || formatUsdCompact(project.marketCap),
+    marketCapUsd: Number(project.marketCap) || 0,
     priceChange: typeof project.priceChange24h === 'string' ? parseFloat(project.priceChange24h) || 0 : (project.priceChange24h || 0),
-    bondingProgress: project.bondingProgress || 0,
+    bondingProgress: Math.min(100, Math.max(0, Number(project.bondingProgress) || 0)),
     description: project.description || noDescText,
   };
 };
@@ -133,7 +145,7 @@ const FeaturedCard: React.FC<{ project: FeaturedProject; t: TranslationKeys }> =
       <div
         className="absolute inset-0 bg-cover bg-center"
         style={{
-          backgroundImage: `url(${project.imageUrl})`,
+          backgroundImage: cssUrl(project.imageUrl),
           backgroundColor: '#1A1B23'
         }}
       />
@@ -186,7 +198,7 @@ const LiveProjectCard: React.FC<{ project: LiveProject; t: TranslationKeys }> = 
       <div
         className="w-[140px] h-[140px] lg:w-[160px] lg:h-[160px] xl:w-[180px] xl:h-[180px] bg-cover bg-center rounded-xl flex-shrink-0"
         style={{
-          backgroundImage: `url(${project.imageUrl})`,
+          backgroundImage: cssUrl(project.imageUrl),
           backgroundColor: '#1A1B23'
         }}
       />
@@ -231,11 +243,14 @@ const LiveProjectCard: React.FC<{ project: LiveProject; t: TranslationKeys }> = 
             <div
               className="h-full rounded-full"
               style={{
-                width: `${Math.min(Math.abs(project.priceChange) * 2, 100)}%`,
-                background: isPositive
-                  ? 'linear-gradient(90deg, #00C853 0%, #40E0D0 100%)'
-                  : 'linear-gradient(90deg, #FF5252 0%, #FF8A80 100%)'
+                width: `${project.bondingProgress}%`,
+                background: 'linear-gradient(90deg, #00C853 0%, #40E0D0 100%)'
               }}
+              role="progressbar"
+              aria-label="Bonding curve progress"
+              aria-valuenow={Math.round(project.bondingProgress)}
+              aria-valuemin={0}
+              aria-valuemax={100}
             />
           </div>
 
@@ -288,15 +303,14 @@ export default function LaunchpadHome() {
   const [tempFilters, setTempFilters] = useState<FilterState>(defaultFilters);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
+  const liveSeqRef = useRef(0);
+
   const fetchFeaturedProjects = useCallback(async () => {
     setIsLoadingFeatured(true);
     try {
       const response = await apiService.getLaunchpadFeaturedProjects();
-      const projects = response?.projects || [];
-      const transformed = projects.map(transformToFeaturedProject);
-      setFeaturedProjects(transformed);
-    } catch (err) {
-      console.error("Failed to fetch featured projects:", err);
+      setFeaturedProjects((response?.projects || []).map(transformToFeaturedProject));
+    } catch {
       setError("Failed to load featured projects");
     } finally {
       setIsLoadingFeatured(false);
@@ -304,42 +318,33 @@ export default function LaunchpadHome() {
   }, []);
 
   const fetchLiveProjects = useCallback(async (search?: string) => {
+    const seq = ++liveSeqRef.current;
     setIsLoadingLive(true);
     try {
       const response = await apiService.getLaunchpadLiveProjects({
         search,
-        limit: 20,
+        limit: 50,
         sortBy: "createdAt",
         sortOrder: "desc",
       });
-      const projects = response?.projects || [];
+      if (seq !== liveSeqRef.current) return;
       const noDescText = t.launchpad?.home?.noDescription || "No description available";
-      const transformed = projects.map((p) => transformToLiveProject(p, noDescText));
-      setLiveProjects(transformed);
-    } catch (err) {
-      console.error("Failed to fetch live projects:", err);
-      setError("Failed to load live projects");
+      setLiveProjects((response?.projects || []).map((p) => transformToLiveProject(p, noDescText)));
+      setError(null);
+    } catch {
+      if (seq === liveSeqRef.current) setError("Failed to load live projects");
     } finally {
-      setIsLoadingLive(false);
+      if (seq === liveSeqRef.current) setIsLoadingLive(false);
     }
   }, [t]);
 
-  // Initial fetch on mount
   useEffect(() => {
     fetchFeaturedProjects();
-    fetchLiveProjects();
-  }, [fetchFeaturedProjects, fetchLiveProjects]);
+  }, [fetchFeaturedProjects]);
 
-  // Debounced search
+  // Live projects: loaded on mount and (debounced) whenever the search changes.
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (searchQuery) {
-        fetchLiveProjects(searchQuery);
-      } else {
-        fetchLiveProjects();
-      }
-    }, 300);
-
+    const timeoutId = setTimeout(() => fetchLiveProjects(searchQuery.trim() || undefined), searchQuery ? 300 : 0);
     return () => clearTimeout(timeoutId);
   }, [searchQuery, fetchLiveProjects]);
 
@@ -391,7 +396,24 @@ export default function LaunchpadHome() {
       filters.status === "All" ||
       project.status.toLowerCase() === filters.status.toLowerCase();
 
-    return matchesSearch && matchesStatus;
+    // Market cap range (USD)
+    const mcMin = Number(filters.marketCapMin);
+    const mcMax = Number(filters.marketCapMax);
+    const matchesMarketCap =
+      (!filters.marketCapMin || !Number.isFinite(mcMin) || project.marketCapUsd >= mcMin) &&
+      (!filters.marketCapMax || !Number.isFinite(mcMax) || project.marketCapUsd <= mcMax);
+
+    // Age range in the chosen unit
+    const ageMs = Date.now() - project.createdAtMs;
+    const unitMs = AGE_UNIT_MS[filters.ageUnit];
+    const ageMin = Number(filters.ageMin);
+    const ageMax = Number(filters.ageMax);
+    const matchesAge =
+      Number.isFinite(ageMs) &&
+      (!filters.ageMin || !Number.isFinite(ageMin) || ageMs >= ageMin * unitMs) &&
+      (!filters.ageMax || !Number.isFinite(ageMax) || ageMs <= ageMax * unitMs);
+
+    return matchesSearch && matchesStatus && matchesMarketCap && matchesAge;
   });
 
   return (
@@ -471,7 +493,7 @@ export default function LaunchpadHome() {
             <button
               onClick={handleOpenFilterModal}
               className={`w-10 h-10 rounded-full border cursor-pointer flex items-center justify-center transition-colors ${
-                filters.status !== "All" || filters.category !== "All" || filters.marketCapMin || filters.marketCapMax || filters.ageMin || filters.ageMax
+                filters.status !== "All" || filters.marketCapMin || filters.marketCapMax || filters.ageMin || filters.ageMax
                   ? "bg-[#40E0D0]/10 border-[#40E0D0]/30"
                   : "bg-[#1A1B23] border-[#2B2D30] hover:bg-[#2B2D30]"
               }`}
@@ -581,71 +603,6 @@ export default function LaunchpadHome() {
 
               {/* Filter Fields - 24px horizontal padding, 16px gap */}
               <div className="flex flex-col !gap-4 !px-6">
-                {/* Category Dropdown */}
-                <div className="flex flex-col !gap-2.5">
-                  <label
-                    className="text-white"
-                    style={{
-                      fontFamily: "'Inter Variable', Inter, sans-serif",
-                      fontSize: "14px",
-                      fontWeight: 400,
-                      lineHeight: "1.4em",
-                      letterSpacing: "-0.3px",
-                    }}
-                  >
-                    {t.launchpad?.home?.filters?.category || "Category"}
-                  </label>
-                  <div className="relative">
-                    <button
-                      onClick={() => handleDropdownToggle("category")}
-                      className="flex items-center justify-between w-[387px] !px-3 !py-3.5 bg-[#131519] border border-[#2B2D30] rounded-xl hover:border-[#3B3D40] transition-colors"
-                      style={{ borderWidth: "0.5px" }}
-                    >
-                      <span
-                        className="text-white"
-                        style={{
-                          fontFamily: "'Inter Variable', Inter, sans-serif",
-                          fontSize: "14px",
-                          fontWeight: 400,
-                          lineHeight: "1.4em",
-                          letterSpacing: "-0.3px",
-                        }}
-                      >
-                        {tempFilters.category}
-                      </span>
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <path d="M4 6L8 10L12 6" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </button>
-                    {openDropdown === "category" && (
-                      <div className="absolute top-full left-0 right-0 !mt-1 bg-[#131519] border border-[#2B2D30] rounded-xl overflow-hidden z-10 max-h-[200px] overflow-y-auto">
-                        {categoryOptions.map((option) => (
-                          <button
-                            key={option}
-                            onClick={() => {
-                              setTempFilters({ ...tempFilters, category: option });
-                              setOpenDropdown(null);
-                            }}
-                            className={`w-full !px-3 !py-2.5 text-left hover:bg-[#2B2D30] transition-colors ${
-                              tempFilters.category === option ? "bg-[#2B2D30]" : ""
-                            }`}
-                            style={{
-                              fontFamily: "'Inter Variable', Inter, sans-serif",
-                              fontSize: "14px",
-                              fontWeight: 400,
-                              lineHeight: "1.4em",
-                              letterSpacing: "-0.3px",
-                              color: "#FFFFFF",
-                            }}
-                          >
-                            {option}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
                 {/* Status Dropdown */}
                 <div className="flex flex-col !gap-2.5">
                   <label

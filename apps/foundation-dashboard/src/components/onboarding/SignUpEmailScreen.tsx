@@ -418,11 +418,6 @@ export const SignUpEmailScreen: React.FC<SignUpEmailScreenProps> = ({
               `}</style>
               
               {/* OR Divider */}
-              {/* <div className="flex items-center w-full my-6">
-                <div className="flex-1 h-px bg-[#2B2D30]"></div>
-                <span className="!px-4 text-[#636466] text-sm">OR</span>
-                <div className="flex-1 h-px bg-[#2B2D30]"></div>
-              </div> */}
 
               <div className='flex flex-col  gap-2'>
                        

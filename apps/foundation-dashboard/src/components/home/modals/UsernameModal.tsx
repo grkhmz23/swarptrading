@@ -31,6 +31,8 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
     isChecking: boolean;
     isAvailable: boolean | null;
     message: string;
+    /** The exact username this result belongs to. */
+    checkedFor?: string;
   }>({
     isChecking: false,
     isAvailable: null,
@@ -101,7 +103,10 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
     return { isValid: true, message: '' };
   };
 
+  const latestCheckRef = useRef('');
+
   const checkUsernameAvailability = async (username: string) => {
+    latestCheckRef.current = username.trim();
     // First validate format
     const formatValidation = validateUsernameFormat(username);
     if (!formatValidation.isValid) {
@@ -131,13 +136,16 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
       }
 
       const result = await apiService.checkUsernameAvailability(username.trim(), token);
+      // A newer check started while this one was in flight: ignore the stale answer.
+      if (latestCheckRef.current !== username.trim()) return;
       setValidationStatus({
         isChecking: false,
         isAvailable: result.available,
-        message: result.message
+        message: result.message,
+        checkedFor: username.trim(),
       });
-    } catch (error: unknown) {
-      console.error('Error checking username:', error);
+    } catch {
+      if (latestCheckRef.current !== username.trim()) return;
       setValidationStatus({
         isChecking: false,
         isAvailable: false,
@@ -196,8 +204,8 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
       return;
     }
 
-    // Check if username is validated and available
-    if (validationStatus.isAvailable !== true) {
+    // The availability result must be for exactly this username.
+    if (validationStatus.isAvailable !== true || validationStatus.checkedFor !== usernameToSubmit) {
       if (validationStatus.isChecking) {
         setError(t.modals?.username?.errors?.pleaseWait || 'Please wait while we check username availability');
         return;

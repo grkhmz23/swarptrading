@@ -363,15 +363,6 @@ class ApiService {
     });
   }
 
-  async markAllNotificationsAsRead(token: string): Promise<{ affected: number }> {
-    return this.makeRequest('/notifications/mark-all-read', {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-  }
-
 
 
   async getSwapQuote(
@@ -496,46 +487,6 @@ class ApiService {
     });
   }
 
-  async getSupportedSwapPairs(walletId: string, token: string): Promise<Array<{
-    input: string;
-    output: string;
-    dex?: string;
-  }>> {
-    return this.makeRequest(`/wallet/${enc(walletId)}/swap/supported-pairs`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-  }
-
-  // Estimate swap fees
-  async estimateSwapFees(
-    walletId: string,
-    token: string,
-    data: {
-      inputToken: string;
-      outputToken: string;
-      amount: number;
-    }
-  ): Promise<{
-    networkFee: number;
-    dexFee: number;
-    priceImpact: number;
-    minimumReceived: number;
-    exchangeRate: number;
-  }> {
-
-    return this.makeRequest(`/wallet/${enc(walletId)}/swap/estimate-fees`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-  }
-
   async getSwapTokenBalances(walletId: string, token: string): Promise<Array<{
     token: string;
     symbol: string;
@@ -604,24 +555,6 @@ class ApiService {
       'USDC': 6,
     };
     return tokenDecimals[symbol] || 9;
-  }
-
-  // Sync token balances
-  async syncSwapTokenBalances(walletId: string, token: string): Promise<{
-    success: boolean;
-    balances: Array<{
-      token: string;
-      balance: number;
-    }>;
-  }> {
-    return this.makeRequest(`/wallet/${enc(walletId)}/swap/tokens/sync`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({}),
-    });
   }
 
 
@@ -703,20 +636,6 @@ async updatePasscode(
   ): Promise<{ rewardName: string; rewardType: string; claimed: boolean }> {
     return this.makeRequest(`/rewards/${enc(userId)}/${enc(rewardType)}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-  }
-
-  async getRewardStatus(
-    userId: string,
-    rewardType: string,
-    token: string
-  ): Promise<RewardResponse> {
-    return this.makeRequest(`/rewards/${enc(userId)}/reward/${enc(rewardType)}`, {
-      method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
@@ -869,19 +788,6 @@ async addUserContact(userId: string, nickname: string, address: string, token: s
     });
   }
 
-  // Call backend Google callback endpoint
-  async googleLoginCallback(code: string): Promise<{
-    access_token: string;
-    user: { id: string; email: string; firstName: string; lastName: string };
-  }> {
-    return this.makeRequest(`/auth/google/callback${query({ code })}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-  }
-
   async checkEmail(email: string): Promise<{ exists: boolean; message: string }> {
     return this.makeRequest('/auth/check-email', {
       method: 'POST',
@@ -920,18 +826,6 @@ async getExchangeRates(): Promise<{
 
 async getTranslations(locale: string): Promise<Record<string, unknown>> {
   return this.makeRequest<Record<string, unknown>>(`/translations/${enc(locale)}`, {
-    method: 'GET',
-  });
-}
-
-async getAllTranslations(): Promise<Record<string, Record<string, unknown>>> {
-  return this.makeRequest<Record<string, Record<string, unknown>>>('/translations/all', {
-    method: 'GET',
-  });
-}
-
-async getSupportedLocales(): Promise<{ locales: string[]; default: string }> {
-  return this.makeRequest<{ locales: string[]; default: string }>('/translations/locales', {
     method: 'GET',
   });
 }
@@ -1020,15 +914,6 @@ async updateLanguage(
   });
 }
 
-async getLanguage(token: string): Promise<{ language: string }> {
-  return this.makeRequest<{ language: string }>('/auth/language', {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-}
-
 async getTokenPrices(symbols?: string[]): Promise<{
   prices: Record<string, { price: number; priceChange24h?: number }>;
   timestamp: number;
@@ -1038,26 +923,6 @@ async getTokenPrices(symbols?: string[]): Promise<{
     prices: Record<string, { price: number; priceChange24h?: number }>;
     timestamp: number;
   }>(`/tokens/prices${qs}`, {
-    method: 'GET',
-  });
-}
-
-async getSupportedTokens(): Promise<{
-  tokens: Array<{
-    symbol: string;
-    name: string;
-    decimals: number;
-    icon: string;
-  }>;
-}> {
-  return this.makeRequest<{
-    tokens: Array<{
-      symbol: string;
-      name: string;
-      decimals: number;
-      icon: string;
-    }>;
-  }>('/tokens/supported', {
     method: 'GET',
   });
 }
@@ -1087,21 +952,6 @@ async getAllJupiterTokens(params?: { search?: string; limit?: number }): Promise
 
   const qs = searchParams.toString();
   return this.makeRequest(`/tokens/all${qs ? `?${qs}` : ''}`, {
-    method: 'GET',
-  });
-}
-
-async getPopularTokens(): Promise<{
-  tokens: Array<{
-    address: string;
-    symbol: string;
-    name: string;
-    decimals: number;
-    logoURI?: string;
-    isVerified?: boolean;
-  }>;
-}> {
-  return this.makeRequest('/tokens/popular', {
     method: 'GET',
   });
 }
@@ -1139,27 +989,6 @@ async getTokensWithVolume(params?: { search?: string; limit?: number }): Promise
 
   const qs = searchParams.toString();
   return this.makeRequest(`/tokens/with-volume${qs ? `?${qs}` : ''}`, {
-    method: 'GET',
-  });
-}
-
-async searchTokens(query: string, limit?: number): Promise<{
-  tokens: Array<{
-    address: string;
-    symbol: string;
-    name: string;
-    decimals: number;
-    logoURI?: string;
-    isVerified?: boolean;
-  }>;
-  count: number;
-  query: string;
-}> {
-  const searchParams = new URLSearchParams();
-  searchParams.append('q', query);
-  if (limit) searchParams.append('limit', limit.toString());
-
-  return this.makeRequest(`/tokens/search?${searchParams.toString()}`, {
     method: 'GET',
   });
 }
@@ -1234,24 +1063,6 @@ async getLaunchpadProject(projectId: string, token?: string | null): Promise<Lau
   });
 }
 
-// Create new project (Request Token)
-async createLaunchpadProject(
-  data: LaunchpadCreateProjectRequest,
-  token: string
-): Promise<{
-  project: LaunchpadProject;
-  message: string;
-}> {
-  return this.makeRequest('/launchpad/projects', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-}
-
 // Upload project image (multipart/form-data)
 async uploadLaunchpadProjectImage(
   file: File,
@@ -1294,54 +1105,6 @@ async getLaunchpadSellQuote(
 }> {
   return this.makeRequest(`/launchpad/projects/${enc(projectId)}/quote/sell${query({ amount })}`, {
     method: 'GET',
-  });
-}
-
-async buyLaunchpadToken(
-  projectId: string,
-  amount: number,
-  token: string
-): Promise<{
-  success: boolean;
-  transaction: {
-    id: string;
-    signature?: string;
-    inputAmount: number;
-    outputAmount: number;
-  };
-  message: string;
-}> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/buy`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ amount }),
-  });
-}
-
-async sellLaunchpadToken(
-  projectId: string,
-  amount: number,
-  token: string
-): Promise<{
-  success: boolean;
-  transaction: {
-    id: string;
-    signature?: string;
-    inputAmount: number;
-    outputAmount: number;
-  };
-  message: string;
-}> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/sell`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ amount }),
   });
 }
 
@@ -1538,18 +1301,6 @@ async getLaunchpadAlerts(token: string): Promise<{
   });
 }
 
-async getLaunchpadAlert(alertId: string, token: string): Promise<{
-  success: boolean;
-  alert: LaunchpadAlert;
-}> {
-  return this.makeRequest(`/launchpad/alerts/${enc(alertId)}`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-}
-
 async updateLaunchpadAlert(
   alertId: string,
   data: {
@@ -1586,71 +1337,6 @@ async deleteLaunchpadAlert(alertId: string, token: string): Promise<{
   });
 }
 
-async getLaunchpadComments(
-  projectId: string,
-  params?: { page?: number; limit?: number }
-): Promise<{
-  comments: Array<{
-    id: string;
-    content: string;
-    author: string;
-    authorAvatar?: string;
-    likes: number;
-    isLiked?: boolean;
-    createdAt: string;
-  }>;
-  total: number;
-}> {
-  const searchParams = new URLSearchParams();
-  if (params?.page) searchParams.append('page', params.page.toString());
-  if (params?.limit) searchParams.append('limit', params.limit.toString());
-
-  const qs = searchParams.toString();
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/comments${qs ? `?${qs}` : ''}`, {
-    method: 'GET',
-  });
-}
-
-// Post comment on project
-async postLaunchpadComment(
-  projectId: string,
-  content: string,
-  token: string
-): Promise<{
-  comment: {
-    id: string;
-    content: string;
-    author: string;
-    createdAt: string;
-  };
-  message: string;
-}> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/comments`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ content }),
-  });
-}
-
-// Like/unlike comment
-async toggleLaunchpadCommentLike(
-  commentId: string,
-  token: string
-): Promise<{
-  isLiked: boolean;
-  likes: number;
-}> {
-  return this.makeRequest(`/launchpad/comments/${enc(commentId)}/like`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-}
-
 async getLaunchpadHolders(
   projectId: string,
   params?: { limit?: number }
@@ -1666,211 +1352,6 @@ async getLaunchpadHolders(
   const qs = params?.limit ? `?limit=${params.limit}` : '';
   return this.makeRequest(`/launchpad/projects/${enc(projectId)}/holders${qs}`, {
     method: 'GET',
-  });
-}
-
-// Create unsigned token creation transaction (for wallet signing)
-async createLaunchpadTokenOnChain(
-  data: LaunchpadOnChainCreateRequest,
-  token: string
-): Promise<LaunchpadOnChainTransactionResponse> {
-  return this.makeRequest('/launchpad/onchain/create-token', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-}
-
-// Confirm token creation after transaction is signed and submitted
-async confirmLaunchpadTokenCreation(
-  data: LaunchpadConfirmTokenCreationRequest,
-  token: string
-): Promise<{
-  success: boolean;
-  project: LaunchpadProject;
-  message: string;
-}> {
-  return this.makeRequest('/launchpad/onchain/confirm-token', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  });
-}
-
-// Submit signed transaction to Solana network
-async submitLaunchpadTransaction(
-  signedTransaction: string,
-  token: string
-): Promise<{
-  signature: string;
-  status: string;
-}> {
-  return this.makeRequest('/launchpad/onchain/submit', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ signedTransaction }),
-  });
-}
-
-async getLaunchpadTransactionStatus(
-  signature: string
-): Promise<{
-  signature: string;
-  status: 'pending' | 'confirmed' | 'failed';
-  confirmations?: number;
-  error?: string;
-}> {
-  return this.makeRequest(`/launchpad/onchain/tx/${enc(signature)}`, {
-    method: 'GET',
-  });
-}
-
-// Create unsigned buy transaction (for wallet signing)
-async createLaunchpadBuyTransactionOnChain(
-  projectId: string,
-  amount: number,
-  token: string
-): Promise<LaunchpadOnChainTransactionResponse> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/buy`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ amount }),
-  });
-}
-
-// Confirm buy transaction after signing
-async confirmLaunchpadBuyTransaction(
-  projectId: string,
-  signature: string,
-  token: string
-): Promise<{
-  success: boolean;
-  trade: {
-    id: string;
-    type: 'buy';
-    amount: number;
-    tokenAmount: number;
-    signature: string;
-  };
-  message: string;
-}> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/confirm-buy`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ signature }),
-  });
-}
-
-// Create unsigned sell transaction (for wallet signing)
-async createLaunchpadSellTransactionOnChain(
-  projectId: string,
-  amount: number,
-  token: string
-): Promise<LaunchpadOnChainTransactionResponse> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/sell`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ amount }),
-  });
-}
-
-// Confirm sell transaction after signing
-async confirmLaunchpadSellTransaction(
-  projectId: string,
-  signature: string,
-  token: string
-): Promise<{
-  success: boolean;
-  trade: {
-    id: string;
-    type: 'sell';
-    amount: number;
-    tokenAmount: number;
-    signature: string;
-  };
-  message: string;
-}> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/confirm-sell`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ signature }),
-  });
-}
-
-// Create migration transaction (graduate to DEX)
-async createLaunchpadMigrateTransaction(
-  projectId: string,
-  token: string
-): Promise<LaunchpadOnChainTransactionResponse> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/migrate`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-}
-
-async getLaunchpadBondingCurveState(
-  projectId: string
-): Promise<{
-  tokensSold: number;
-  solCollected: number;
-  currentPrice: number;
-  targetSol: number;
-  progress: number;
-  isCompleted: boolean;
-}> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/state`, {
-    method: 'GET',
-  });
-}
-
-async getLaunchpadUserPosition(
-  projectId: string,
-  token: string
-): Promise<{
-  tokenBalance: number;
-  solInvested: number;
-  averagePrice: number;
-  unrealizedPnl: number;
-}> {
-  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/position`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-}
-
-async getLaunchpadCustodialWallet(
-  token: string
-): Promise<LaunchpadCustodialWalletResponse> {
-  return this.makeRequest('/launchpad/custodial/wallet', {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
   });
 }
 
@@ -1958,20 +1439,6 @@ async createVeriffSession(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(data || {}),
-  });
-}
-
-async getVeriffKycStatus(token: string): Promise<{
-  success: boolean;
-  kycStatus: string;
-  sessionId: string | null;
-  sessionUrl: string | null;
-}> {
-  return this.makeRequest('/veriff/status', {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
   });
 }
 

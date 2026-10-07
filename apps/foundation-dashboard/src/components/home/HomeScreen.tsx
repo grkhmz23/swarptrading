@@ -138,6 +138,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
     username?: string;
     firstName: string;
     lastName: string;
+    /** The user closed the "create a username" card this session. */
+    usernamePromptDismissed?: boolean;
   } | null>(null);
   const [currentSection, setCurrentSection] = useState<string>('Home');
   const [hasInitializedSection, setHasInitializedSection] = useState(false);
@@ -812,7 +814,7 @@ useEffect(() => {
 
   const handleOpenUsernameModal = () => {
     // Only allow opening username modal if no username is set
-    if (!userProfile?.username || userProfile.username === 'dismissed') {
+    if (!userProfile?.username) {
       setShowUsernameModal(true);
     }
   };
@@ -933,7 +935,7 @@ const handleNotificationClick = (notification: Notification) => {
   const handleCloseUsernameCard = () => {
     // Hide the username card permanently for this session
     // You might want to save this to localStorage if you want it permanent
-    setUserProfile(prev => prev ? { ...prev, username: 'dismissed' } : null);
+    setUserProfile(prev => prev ? { ...prev, usernamePromptDismissed: true } : null);
   };
 
   // Fiat on/off-ramp

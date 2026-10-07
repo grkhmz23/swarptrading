@@ -10,6 +10,7 @@ import { ApiError, errorMessage, newIdempotencyKey } from '@/lib/http';
 import { floorToDecimals, fractionOfSpendable, isAmountInput, parseAmount, SOL_FEE_RESERVE } from '@/lib/amount';
 import { NATIVE_SOL_DECIMALS } from '@/lib/solana';
 import { PinConfirmModal } from '@/components/ui/PinConfirmModal';
+import { cssUrl } from '@/lib/css';
 
 // Dynamic import for TradingViewChart to avoid SSR issues with lightweight-charts
 const TradingViewChart = dynamic(
@@ -118,7 +119,7 @@ interface TokenDetailProps {
 }
 
 // Tab types
-type TabType = "chart" | "comments" | "trades" | "holders";
+type TabType = "chart" | "trades" | "holders";
 
 /** Launchpad tokens accept up to 9 decimals in input; the backend rejects finer amounts. */
 const LAUNCHPAD_INPUT_DECIMALS = 9;
@@ -294,7 +295,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
 
   // Refs for scroll-to-section navigation
   const chartRef = useRef<HTMLDivElement>(null);
-  const commentsRef = useRef<HTMLDivElement>(null);
   const tradesRef = useRef<HTMLDivElement>(null);
   const holdersRef = useRef<HTMLDivElement>(null);
 
@@ -303,7 +303,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     setActiveTab(tab);
     const refs: Record<TabType, React.RefObject<HTMLDivElement | null>> = {
       chart: chartRef,
-      comments: commentsRef,
       trades: tradesRef,
       holders: holdersRef,
     };
@@ -882,10 +881,18 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
           className="flex items-center gap-6 sticky top-0 z-10"
           style={{ padding: "28px 28px 0px", backgroundColor: colors["Neutral/600"] }}
         >
-          {(["chart", "comments", "trades", "holders"] as TabType[]).map((tab) => {
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to launchpad"
+            className="flex items-center gap-1 cursor-pointer"
+            style={{ padding: "0px 4px 8px", ...typography["P2/Medium"], color: colors["Neutral/100"] }}
+          >
+            ← Back
+          </button>
+          {(["chart", "trades", "holders"] as TabType[]).map((tab) => {
             const tabLabels = {
               chart: t.launchpad?.tokenDetail?.tabs?.chart || "Chart",
-              comments: t.launchpad?.tokenDetail?.tabs?.comments || "Comments",
               trades: t.launchpad?.tokenDetail?.tabs?.trades || "Trades",
               holders: t.launchpad?.tokenDetail?.tabs?.holders || "Holders",
             };
@@ -931,21 +938,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
         </div>
 
         {/* Comments Section */}
-        {/* <div
-          ref={commentsRef}
-          id="comments-section"
-          className="flex flex-col gap-4 p-7"
-          style={{ borderBottom: `0.2px solid ${colors["Neutral/400"]}` }}
-        >
-          <span style={{ ...typography["P1/Semibold"], color: colors["Neutral/50"] }}>
-            Comments
-          </span>
-          <div className="flex items-center justify-center" style={{ minHeight: "100px" }}>
-            <span style={{ ...typography["P2/Regular"], color: colors["Neutral/200"] }}>
-              No comments yet
-            </span>
-          </div>
-        </div> */}
 
         {/* Trades Section */}
         <div
@@ -1149,7 +1141,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
               <div
                 className="w-7 h-7 rounded-full bg-cover bg-center"
                 style={{
-                  backgroundImage: `url(${project.imageUrl || '/figma-assets/token-detail/token-placeholder.png'})`,
+                  backgroundImage: cssUrl(project.imageUrl || '/figma-assets/token-detail/token-placeholder.png'),
                 }}
               />
               <div className="flex items-center gap-1.5">

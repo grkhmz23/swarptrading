@@ -34,11 +34,24 @@ export default function LaunchpadLayout({ innerItems }: LaunchpadLayoutProps) {
     return labelKeyMap[itemId] || itemId;
   };
 
+  /** Keep the open token in the URL (?project=<id>) so refresh and sharing work. */
+  const selectProject = (projectId: string | null) => {
+    setSelectedProjectId(projectId);
+    const url = new URL(window.location.href);
+    if (projectId) url.searchParams.set("project", projectId);
+    else url.searchParams.delete("project");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+
   // Listen for changes in the launchpad subsection
   useEffect(() => {
     const storedSection = localStorage.getItem("swarp_fd_launchpad_subsection");
-    if (storedSection) {
+    if (storedSection && innerItems.some((item) => item.id === storedSection)) {
       setCurrentSection(storedSection);
+    }
+    const projectFromUrl = new URLSearchParams(window.location.search).get("project");
+    if (projectFromUrl && /^[A-Za-z0-9_-]{1,64}$/.test(projectFromUrl)) {
+      setSelectedProjectId(projectFromUrl);
     }
 
     // Listen for custom subsection change events
@@ -46,13 +59,13 @@ export default function LaunchpadLayout({ innerItems }: LaunchpadLayoutProps) {
       const customEvent = e as CustomEvent<string>;
       setCurrentSection(customEvent.detail);
       // Clear selected project when navigating away
-      setSelectedProjectId(null);
+      selectProject(null);
     };
 
     // Listen for token detail navigation events
     const handleTokenDetail = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
-      setSelectedProjectId(customEvent.detail);
+      selectProject(customEvent.detail);
     };
 
     window.addEventListener("launchpad-subsection-change", handleSubChange as EventListener);
@@ -62,6 +75,7 @@ export default function LaunchpadLayout({ innerItems }: LaunchpadLayoutProps) {
       window.removeEventListener("launchpad-subsection-change", handleSubChange as EventListener);
       window.removeEventListener("launchpad-token-detail", handleTokenDetail as EventListener);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- registered once; selectProject only touches state and the URL
   }, []);
 
   // Custom onSelect handler for launchpad
@@ -131,7 +145,7 @@ export default function LaunchpadLayout({ innerItems }: LaunchpadLayoutProps) {
         {selectedProjectId ? (
           <TokenDetail
             projectId={selectedProjectId}
-            onBack={() => setSelectedProjectId(null)}
+            onBack={() => selectProject(null)}
           />
         ) : currentSection === "home" ? (
           <LaunchpadHome />

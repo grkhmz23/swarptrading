@@ -15,6 +15,7 @@ interface UserProfile {
   username?: string;
   firstName: string;
   lastName: string;
+  usernamePromptDismissed?: boolean;
 }
 
 interface WalletSidebarProps {
@@ -100,7 +101,7 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
         </div>
 
         {/* Username Card - Show only if no username set and not dismissed */}
-        {userProfile && !userProfile.username && userProfile.username !== 'dismissed' && (
+        {userProfile && !userProfile.username && !userProfile.usernamePromptDismissed && (
           <div className="bg-[#131519] rounded-xl !p-4 border border-[#2B2D30] !mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-gradient-to-r from-[#143536] rounded-full flex items-center justify-center">
@@ -140,7 +141,7 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
         )}
 
         {/* Username Display - Show if username is set */}
-        {userProfile?.username && userProfile.username !== 'dismissed' && (
+        {userProfile?.username && (
           <div className="bg-[#131519] rounded-xl !p-4 border border-[#2B2D30] !mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-gradient-to-r from-[#40E0D0] to-[#40E0D0]/80 rounded-full flex items-center justify-center">

@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiService, LaunchpadProject } from "@/services/api";
-import TradeModal from "../TradeModal";
 import { useT } from "@/i18n/I18nProvider";
 import { getAccessToken } from '@/lib/session';
+import { errorMessage } from '@/lib/http';
 
 // Token holding type - now matches API response
 interface TokenHolding {
@@ -22,19 +22,6 @@ interface TokenHolding {
 }
 
 // Trade history type
-interface TradeHistoryItem {
-  id: string;
-  type: 'buy' | 'sell';
-  solAmount: string;
-  tokenAmount: string;
-  createdAt: string;
-  project?: {
-    id: string;
-    name: string;
-    ticker: string;
-    imageUrl?: string;
-  };
-}
 
 // Active project type (matching LiveProject from LaunchpadHome)
 interface ActiveProject {
@@ -97,6 +84,21 @@ const transformToActiveProject = (project: LaunchpadProject): ActiveProject => {
   };
 };
 
+interface PortfolioSummary {
+  currentValueSol: number;
+  investedSol: number;
+  unrealizedPnlSol: number;
+  realizedPnlSol: number;
+  pnlPercent: number;
+}
+
+const formatSol = (value: number): string => {
+  const abs = Math.abs(value);
+  if (abs >= 1000) return `${(value / 1000).toFixed(2)}K SOL`;
+  if (abs >= 1 || abs === 0) return `${value.toFixed(2)} SOL`;
+  return `${value.toFixed(6)} SOL`;
+};
+
 // Format token amount for display
 const formatTokenAmount = (amount: number): string => {
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(2)}M`;
@@ -106,15 +108,13 @@ const formatTokenAmount = (amount: number): string => {
 
 export default function Portfolio() {
   const t = useT();
-  const [totalBalance, setTotalBalance] = useState("$0.00");
+  const [summary, setSummary] = useState<PortfolioSummary | null>(null);
+  const [solUsd, setSolUsd] = useState<number | null>(null);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
   const [tokensHeld, setTokensHeld] = useState<TokenHolding[]>([]);
   const [isLoadingTokens, setIsLoadingTokens] = useState(true);
-  const [_tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
-  const [_isLoadingTradeHistory, setIsLoadingTradeHistory] = useState(true);
   const [activeProjects, setActiveProjects] = useState<ActiveProject[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
-  // const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
-  // const [selectedToken, setSelectedToken] = useState<TokenHolding | null>(null);
 
   // Redirect to token detail page
   const handleOpenTrade = (token: TokenHolding) => {
@@ -125,79 +125,63 @@ export default function Portfolio() {
     window.dispatchEvent(event);
   };
 
-  // // Close trade modal
-  // const handleCloseTrade = () => {
-  //   setIsTradeModalOpen(false);
-  //   setSelectedToken(null);
-  // };
 
-  // Fetch user's portfolio (tokens held)
+  // Fetch user's portfolio (tokens held) and the SOL/USD price for the total.
   const fetchPortfolio = useCallback(async () => {
     setIsLoadingTokens(true);
-    try {
-      const accessToken = getAccessToken();
-      if (!accessToken) {
-        setTokensHeld([]);
-        setTotalBalance("$0.00");
-        return;
-      }
-
-      const response = await apiService.getLaunchpadPortfolio(accessToken);
-      const investments = response?.investments || [];
-
-      // Transform investments to TokenHolding format
-      const holdings: TokenHolding[] = investments
-        .filter((inv) => parseFloat(inv.tokenBalance) > 0)
+    setPortfolioError(null);
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      setTokensHeld([]);
+      setSummary(null);
+      setPortfolioError("Sign in to see your portfolio.");
+      setIsLoadingTokens(false);
+      return;
+    }
+    const num = (value: unknown) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const [portfolioResult, priceResult] = await Promise.allSettled([
+      apiService.getLaunchpadPortfolio(accessToken),
+      apiService.getSolanaPrice(),
+    ]);
+    if (priceResult.status === "fulfilled" && Number.isFinite(priceResult.value?.price)) {
+      setSolUsd(priceResult.value.price);
+    } else {
+      setSolUsd(null);
+    }
+    if (portfolioResult.status === "fulfilled") {
+      const response = portfolioResult.value;
+      const holdings: TokenHolding[] = (response?.investments || [])
+        .filter((inv) => num(inv.tokenBalance) > 0)
         .map((inv) => ({
           id: inv.id,
           projectId: inv.project?.id || "",
           name: inv.project?.name || "Unknown",
           ticker: inv.project?.ticker || "???",
           image: inv.project?.imageUrl,
-          tokenBalance: parseFloat(inv.tokenBalance) || 0,
-          currentValueSol: parseFloat(inv.currentValueSol) || 0,
-          totalSolInvested: parseFloat(inv.totalSolInvested) || 0,
-          unrealizedPnlSol: parseFloat(inv.unrealizedPnlSol) || 0,
-          unrealizedPnlPercent: parseFloat(inv.unrealizedPnlPercent) || 0,
-          priceChange24h: inv.project?.priceChange24h || 0,
+          tokenBalance: num(inv.tokenBalance),
+          currentValueSol: num(inv.currentValueSol),
+          totalSolInvested: num(inv.totalSolInvested),
+          unrealizedPnlSol: num(inv.unrealizedPnlSol),
+          unrealizedPnlPercent: num(inv.unrealizedPnlPercent),
+          priceChange24h: num(inv.project?.priceChange24h),
         }));
-
       setTokensHeld(holdings);
-
-      // Calculate total balance from summary
-      const totalValueSol = parseFloat(response.summary?.totalCurrentValueSol || "0");
-      // Approximate USD value (assuming $200/SOL for display)
-      const totalValueUsd = totalValueSol * 200;
-      setTotalBalance(totalValueUsd >= 1000
-        ? `$${(totalValueUsd / 1000).toFixed(1)}K`
-        : `$${totalValueUsd.toFixed(2)}`
-      );
-    } catch (error) {
-      console.error("Failed to fetch portfolio:", error);
+      setSummary({
+        currentValueSol: num(response.summary?.totalCurrentValueSol),
+        investedSol: num(response.summary?.totalInvestmentsSol),
+        unrealizedPnlSol: num(response.summary?.totalUnrealizedPnlSol),
+        realizedPnlSol: num(response.summary?.totalRealizedPnlSol),
+        pnlPercent: num(response.summary?.totalPnlPercent),
+      });
+    } else {
       setTokensHeld([]);
-      setTotalBalance("$0.00");
-    } finally {
-      setIsLoadingTokens(false);
+      setSummary(null);
+      setPortfolioError(errorMessage(portfolioResult.reason, "Could not load your portfolio."));
     }
-  }, []);
-
-  const fetchTradeHistory = useCallback(async () => {
-    setIsLoadingTradeHistory(true);
-    try {
-      const accessToken = getAccessToken();
-      if (!accessToken) {
-        setTradeHistory([]);
-        return;
-      }
-
-      const response = await apiService.getLaunchpadUserTradeHistory(accessToken, { limit: 20 });
-      setTradeHistory(response?.trades || []);
-    } catch (error) {
-      console.error("Failed to fetch trade history:", error);
-      setTradeHistory([]);
-    } finally {
-      setIsLoadingTradeHistory(false);
-    }
+    setIsLoadingTokens(false);
   }, []);
 
   // Fetch active projects (live projects from the launchpad)
@@ -208,8 +192,7 @@ export default function Portfolio() {
       const projects = response?.projects || [];
       const transformed = projects.map(transformToActiveProject);
       setActiveProjects(transformed);
-    } catch (error) {
-      console.error("Failed to fetch active projects:", error);
+    } catch {
       setActiveProjects([]);
     } finally {
       setIsLoadingProjects(false);
@@ -218,9 +201,8 @@ export default function Portfolio() {
 
   useEffect(() => {
     fetchPortfolio();
-    fetchTradeHistory();
     fetchActiveProjects();
-  }, [fetchPortfolio, fetchTradeHistory, fetchActiveProjects]);
+  }, [fetchPortfolio, fetchActiveProjects]);
 
   // Navigate to request token
   const handleRequestToken = () => {
@@ -274,32 +256,29 @@ export default function Portfolio() {
               color: "#FFFFFF",
             }}
           >
-            {totalBalance}
+            {summary ? formatSol(summary.currentValueSol) : "—"}
           </span>
+          {summary && solUsd !== null && (
+            <span style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontSize: "14px", color: "#636466" }}>
+              ≈ ${(summary.currentValueSol * solUsd).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
+          )}
+          {portfolioError && (
+            <span role="alert" style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontSize: "13px", color: "#EB5757" }}>
+              {portfolioError}
+            </span>
+          )}
         </div>
 
-        {/* Line Graph Placeholder */}
-        <div className="w-full lg:w-[333px] h-[77px]">
-          <svg width="100%" height="77" viewBox="0 0 333 77" fill="none" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="chartGradient" x1="166.5" y1="0" x2="166.5" y2="77" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#40E0D0" stopOpacity="0.12" />
-                <stop offset="1" stopColor="#40E0D0" stopOpacity="0.01" />
-              </linearGradient>
-            </defs>
-            <path
-              d="M0 50L20 45L40 48L60 35L80 40L100 30L120 35L140 25L160 28L180 20L200 25L220 15L240 18L260 22L280 12L300 8L320 10L333 5V77H0V50Z"
-              fill="url(#chartGradient)"
-            />
-            <path
-              d="M0 50L20 45L40 48L60 35L80 40L100 30L120 35L140 25L160 28L180 20L200 25L220 15L240 18L260 22L280 12L300 8L320 10L333 5"
-              stroke="#40E0D0"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
+        {/* Profit and loss from the portfolio summary */}
+        {summary && (
+          <div className="flex flex-col !gap-1 w-full lg:w-[333px]" style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontSize: "14px" }}>
+            <div className="flex justify-between"><span style={{ color: "#636466" }}>Invested</span><span style={{ color: "#FFFFFF" }}>{formatSol(summary.investedSol)}</span></div>
+            <div className="flex justify-between"><span style={{ color: "#636466" }}>Unrealized P&amp;L</span><span style={{ color: getChangeColor(summary.unrealizedPnlSol) }}>{summary.unrealizedPnlSol >= 0 ? "+" : ""}{formatSol(summary.unrealizedPnlSol)}</span></div>
+            <div className="flex justify-between"><span style={{ color: "#636466" }}>Realized P&amp;L</span><span style={{ color: getChangeColor(summary.realizedPnlSol) }}>{summary.realizedPnlSol >= 0 ? "+" : ""}{formatSol(summary.realizedPnlSol)}</span></div>
+            <div className="flex justify-between"><span style={{ color: "#636466" }}>Total return</span><span style={{ color: getChangeColor(summary.pnlPercent) }}>{summary.pnlPercent >= 0 ? "+" : ""}{summary.pnlPercent.toFixed(2)}%</span></div>
+          </div>
+        )}
       </div>
 
       {/* Tokens Held Section */}
@@ -540,7 +519,10 @@ export default function Portfolio() {
                       color: "#46484C",
                     }}
                   >
-                    {token.totalSolInvested.toFixed(4)} SOL
+                    {formatSol(token.currentValueSol)}{" "}
+                    <span style={{ color: getChangeColor(token.unrealizedPnlPercent) }}>
+                      ({token.unrealizedPnlPercent >= 0 ? "+" : ""}{token.unrealizedPnlPercent.toFixed(1)}%)
+                    </span>
                   </span>
                 </div>
 
@@ -737,7 +719,7 @@ export default function Portfolio() {
               color: "#FFFFFF",
             }}
           >
-            {t.launchpad?.portfolio?.activeProjects || "Active projects"}
+            Live projects
           </h2>
         </div>
 
@@ -767,9 +749,11 @@ export default function Portfolio() {
           // Show project cards when there are active projects
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 !gap-4">
             {activeProjects.map((project) => (
-              <div
+              <button
+                type="button"
                 key={project.id}
-                className="flex flex-col !p-4 bg-[#131519] rounded-xl border border-[#2B2D30] hover:border-[#3B3D40] transition-colors cursor-pointer"
+                onClick={() => window.dispatchEvent(new CustomEvent("launchpad-token-detail", { detail: project.id }))}
+                className="flex flex-col text-left !p-4 bg-[#131519] rounded-xl border border-[#2B2D30] hover:border-[#3B3D40] transition-colors cursor-pointer"
               >
                 {/* Project Image */}
                 <div className="w-full h-32 rounded-lg bg-[#1A1B23] !mb-3 overflow-hidden">
@@ -822,7 +806,7 @@ export default function Portfolio() {
                     {project.marketCap}
                   </span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
@@ -839,7 +823,7 @@ export default function Portfolio() {
                   color: "#B3B5B6",
                 }}
               >
-                {t.launchpad?.portfolio?.noSubmittedProjects || "No submitted projects"}
+                No live projects right now
               </span>
               <span
                 style={{
@@ -851,7 +835,7 @@ export default function Portfolio() {
                   color: "#636466",
                 }}
               >
-                {t.launchpad?.portfolio?.noSubmittedProjectsDescription || "You haven't requested a token yet."}
+                Want to launch one? Request a token.
               </span>
             </div>
             {/* Request Token Button */}
@@ -876,18 +860,6 @@ export default function Portfolio() {
         )}
       </div>
 
-      {/* Trade Modal */}
-      {/* {selectedToken && (
-        <TradeModal
-          isOpen={isTradeModalOpen}
-          onClose={handleCloseTrade}
-          token={{
-            name: selectedToken.name,
-            ticker: selectedToken.ticker,
-            image: selectedToken.image,
-          }}
-        />
-      )} */}
     </div>
   );
 }

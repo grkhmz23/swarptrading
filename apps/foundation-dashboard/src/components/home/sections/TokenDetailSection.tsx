@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import type { TranslationKeys } from '@/i18n';
 
-import { SWARP_TOKEN_MINT } from '@/config/env';
+import { SWARP_PRESALE_PRICE_USD, SWARP_TOKEN_MINT } from '@/config/env';
 import { fetchTokenDetail, type TokenData } from '@/services/tokenDetail';
 
 
@@ -290,10 +290,12 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-[#090A11] border border-[#2B2D30] rounded-xl !p-3">
-                    <p className="text-[#636466] text-xs !mb-1">Presale Price</p>
-                    <p className="text-white font-semibold">$0.03</p>
-                  </div>
+                  {SWARP_PRESALE_PRICE_USD !== null && (
+                    <div className="bg-[#090A11] border border-[#2B2D30] rounded-xl !p-3">
+                      <p className="text-[#636466] text-xs !mb-1">Presale Price</p>
+                      <p className="text-white font-semibold">${SWARP_PRESALE_PRICE_USD}</p>
+                    </div>
+                  )}
                   <div className="bg-[#090A11] border border-[#2B2D30] rounded-xl !p-3">
                     <p className="text-[#636466] text-xs !mb-1">Network</p>
                     <p className="text-white font-semibold">Solana</p>

@@ -58,6 +58,8 @@ export default function config(phase: string): NextConfig {
   return {
     poweredByHeader: false,
     reactStrictMode: true,
+    // Strip console.log/info/debug from production bundles; errors and warnings stay.
+    compiler: { removeConsole: isDev ? false : { exclude: ["error", "warn"] } },
     turbopack: {
       root: process.cwd(),
     },

@@ -33,6 +33,12 @@ export const NETWORK_LABEL = IS_MAINNET ? 'Mainnet' : SOLANA_CLUSTER === 'testne
 export const SWARP_TOKEN_MINT =
   process.env.NEXT_PUBLIC_SWARP_TOKEN_MINT || 'SWRP2DA2zGT9q6MvSGanDiTMoiJqqcgmDnbkPJekp3e';
 
+/** Published SWARP presale price in USD (shown on the SWARP token card); hidden when unset. */
+export const SWARP_PRESALE_PRICE_USD: number | null = (() => {
+  const n = Number(process.env.NEXT_PUBLIC_SWARP_PRESALE_PRICE_USD);
+  return process.env.NEXT_PUBLIC_SWARP_PRESALE_PRICE_USD && Number.isFinite(n) && n > 0 ? n : null;
+})();
+
 export const MOONPAY_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY || '';
 
 /** Public marketing / legal site. Legal pages live there, not in this app. */
