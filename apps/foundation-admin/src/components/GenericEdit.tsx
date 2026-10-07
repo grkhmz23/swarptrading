@@ -1,256 +1,308 @@
-import React, { useState, useEffect } from "react";
-import {
-  useOne,
-  useUpdate,
-  useCreate,
-} from "@refinedev/core";
+import React, { useEffect, useMemo, useState } from "react";
+import { useOne, useUpdate, useWarnAboutChange, type BaseRecord } from "@refinedev/core";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeftIcon, CheckIcon } from "@heroicons/react/24/outline";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeftIcon, CheckIcon, LockClosedIcon } from "@heroicons/react/24/outline";
 import { useNavigate, useParams } from "react-router-dom";
 import { LoadingSpinner, LoadingCard } from "@/components/ui/loading";
+import type { EditField } from "@/resources/fields";
+import {
+  computeChanges,
+  describeValue,
+  initialFormValues,
+  type FieldChange,
+  type FormValues,
+} from "@/lib/editForm";
 
 interface GenericEditProps {
   resource: string;
   title: string;
   listPath: string;
-  fields: { key: string; label: string; type: 'text' | 'textarea' | 'email' | 'number' | 'checkbox' }[];
+  fields: EditField[];
 }
 
-export const GenericEdit: React.FC<GenericEditProps> = ({ 
-  resource,
-  title,
-  listPath,
-  fields
-}) => {
+interface EditFormProps extends GenericEditProps {
+  id: string;
+  record: BaseRecord;
+}
+
+const EditForm: React.FC<EditFormProps> = ({ resource, title, listPath, fields, id, record }) => {
+  const navigate = useNavigate();
+  const showPath = `${listPath}/show/${encodeURIComponent(id)}`;
+  const { setWarnWhen } = useWarnAboutChange();
+
+  const [values, setValues] = useState<FormValues>(() => initialFormValues(fields, record));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pendingChanges, setPendingChanges] = useState<FieldChange[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const {
+    mutate: updateRecord,
+    mutation: { isPending },
+  } = useUpdate();
+
+  const isDirty = useMemo(() => computeChanges(fields, values, record).changes.length > 0, [fields, values, record]);
+
+  useEffect(() => {
+    setWarnWhen(isDirty);
+  }, [isDirty, setWarnWhen]);
+
+  useEffect(() => () => setWarnWhen(false), [setWarnWhen]);
+
+  const handleChange = (key: string, value: string | boolean) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+    setNotice(null);
+    setErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const { changes, errors: validationErrors } = computeChanges(fields, values, record);
+    setErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) return;
+    if (changes.length === 0) {
+      setNotice("No changes to save.");
+      return;
+    }
+    setPendingChanges(changes);
+  };
+
+  const handleConfirm = () => {
+    if (!pendingChanges) return;
+    const payload = Object.fromEntries(pendingChanges.map((change) => [change.key, change.to]));
+    updateRecord(
+      { resource, id, values: payload, mutationMode: "pessimistic" },
+      {
+        onSuccess: () => {
+          setWarnWhen(false);
+          setPendingChanges(null);
+          navigate(showPath);
+        },
+        onError: () => {
+          // The notification provider shows the server error; keep the form open.
+          setPendingChanges(null);
+        },
+      },
+    );
+  };
+
+  const handleCancel = () => {
+    if (isDirty && !window.confirm("Discard your unsaved changes?")) return;
+    setWarnWhen(false);
+    navigate(showPath);
+  };
+
+  return (
+    <>
+      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {fields.map((field) => {
+            const error = errors[field.key];
+            const errorId = error ? `${field.key}-error` : undefined;
+            const hintId = field.readOnly && field.readOnlyReason ? `${field.key}-hint` : undefined;
+            const describedBy = [errorId, hintId].filter(Boolean).join(" ") || undefined;
+            const disabled = isPending || field.readOnly;
+
+            if (field.type === "checkbox") {
+              return (
+                <div key={field.key} className="flex items-center space-x-3 md:col-span-2">
+                  <input
+                    id={field.key}
+                    type="checkbox"
+                    checked={values[field.key] === true}
+                    onChange={(e) => handleChange(field.key, e.target.checked)}
+                    disabled={disabled}
+                    aria-describedby={describedBy}
+                    className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor={field.key} className="cursor-pointer">
+                    {field.label}
+                  </Label>
+                  {error && (
+                    <p id={errorId} className="text-sm text-destructive">
+                      {error}
+                    </p>
+                  )}
+                </div>
+              );
+            }
+
+            const inputValue = typeof values[field.key] === "string" ? (values[field.key] as string) : "";
+            return (
+              <div key={field.key} className={field.type === "textarea" ? "space-y-2 md:col-span-2" : "space-y-2"}>
+                <Label htmlFor={field.key} className="flex items-center gap-1">
+                  {field.readOnly && <LockClosedIcon className="h-3.5 w-3.5" aria-hidden="true" />}
+                  {field.label}
+                </Label>
+                {field.type === "textarea" ? (
+                  <Textarea
+                    id={field.key}
+                    value={inputValue}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    disabled={disabled}
+                    readOnly={field.readOnly}
+                    maxLength={field.maxLength}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={describedBy}
+                  />
+                ) : (
+                  <Input
+                    id={field.key}
+                    type={field.type === "number" ? "number" : field.type === "url" ? "url" : "text"}
+                    inputMode={field.type === "number" ? "decimal" : undefined}
+                    min={field.min}
+                    max={field.max}
+                    step={field.type === "number" ? (field.integer ? 1 : "any") : undefined}
+                    value={inputValue}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    placeholder={field.type === "url" ? "https://" : undefined}
+                    disabled={disabled}
+                    readOnly={field.readOnly}
+                    maxLength={field.maxLength}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={describedBy}
+                  />
+                )}
+                {hintId && (
+                  <p id={hintId} className="text-xs text-muted-foreground">
+                    {field.readOnlyReason}
+                  </p>
+                )}
+                {error && (
+                  <p id={errorId} className="text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {notice && (
+          <p className="text-sm text-muted-foreground" role="status">
+            {notice}
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <Button type="submit" disabled={isPending} className="flex items-center justify-center">
+            {isPending ? <LoadingSpinner size="sm" className="mr-2" /> : <CheckIcon className="mr-2 h-4 w-4" />}
+            {isPending ? "Saving..." : "Review changes"}
+          </Button>
+          <Button type="button" variant="outline" onClick={handleCancel} disabled={isPending}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+
+      <Dialog
+        open={pendingChanges !== null}
+        onOpenChange={(open) => {
+          if (!open && !isPending) setPendingChanges(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Confirm changes to this {title.toLowerCase()}</DialogTitle>
+            <DialogDescription>Only the fields below will be sent. Review them before saving.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-left">
+                <tr>
+                  <th className="p-2 font-medium">Field</th>
+                  <th className="p-2 font-medium">Current</th>
+                  <th className="p-2 font-medium">New</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingChanges?.map((change) => (
+                  <tr key={change.key} className="border-t align-top">
+                    <td className="p-2 font-medium">{change.label}</td>
+                    <td className="break-all p-2 text-muted-foreground line-through">{describeValue(change.from)}</td>
+                    <td className="break-all p-2">{describeValue(change.to)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPendingChanges(null)} disabled={isPending}>
+              Back to form
+            </Button>
+            <Button type="button" onClick={handleConfirm} disabled={isPending} className="flex items-center gap-2">
+              {isPending && <LoadingSpinner size="sm" />}
+              {isPending ? "Saving..." : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+};
+
+export const GenericEdit: React.FC<GenericEditProps> = (props) => {
+  const { resource, title, listPath, fields } = props;
   const navigate = useNavigate();
   const { id } = useParams();
-  
-  const [formData, setFormData] = useState<Record<string, unknown>>({});
-  
-  // Hooks for data fetching and mutations
-  const { result: record, query: { isLoading: dataLoading, error } } = useOne({
+
+  const {
+    result: record,
+    query: { isLoading, error },
+  } = useOne({
     resource,
-    id: id as string,
-    queryOptions: {
-      enabled: !!id, // Only fetch if editing (id exists)
-    },
+    id: id ?? "",
+    queryOptions: { enabled: Boolean(id) },
   });
 
-  const updateMutation = useUpdate();
-  const createMutation = useCreate();
-  const { mutate: updateRecord } = updateMutation;
-  const { mutate: createRecord } = createMutation;
-  const updateLoading = updateMutation.mutation.isPending;
-  const createLoading = createMutation.mutation.isPending;
-  
-  const isSubmitting = updateLoading || createLoading;
-
-  // Initialize form data when record is loaded
-  useEffect(() => {
-    if (record) {
-      const initialData: Record<string, unknown> = {};
-      fields.forEach(field => {
-        initialData[field.key] = record[field.key] || '';
-      });
-      setFormData(initialData);
-    }
-  }, [record, fields]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (id) {
-      updateRecord(
-        {
-          resource,
-          id: id,
-          values: formData,
-        },
-        {
-          onSuccess: () => {
-            navigate(listPath);
-          },
-        }
-      );
-    } else {
-      createRecord(
-        {
-          resource,
-          values: formData,
-        },
-        {
-          onSuccess: () => {
-            navigate(listPath);
-          },
-        }
-      );
-    }
-  };
-
-  const handleInputChange = (key: string, value: unknown) => {
-    setFormData(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-
-  if (id && dataLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(listPath)}
-            >
-              <ArrowLeftIcon className="h-4 w-4 mr-2" />
-              Back to {title}s
-            </Button>
-            <h1 className="text-2xl font-bold">Edit {title}</h1>
-          </div>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Loading {title}...</CardTitle>
-            <CardDescription>Please wait while we fetch the {title.toLowerCase()} data for editing</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <LoadingCard lines={fields.length} />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (id && error) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(listPath)}
-            >
-              <ArrowLeftIcon className="h-4 w-4 mr-2" />
-              Back to {title}s
-            </Button>
-            <h1 className="text-2xl font-bold">Edit {title}</h1>
-          </div>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Error Loading {title}</CardTitle>
-            <CardDescription>Unable to load {title.toLowerCase()} data for editing. This might be because the backend API is not running.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm text-muted-foreground">
-              <p>Unable to load data from the API.</p>
-              <p>Please check your network connection and API configuration.</p>
-              <Button 
-                className="mt-4" 
-                onClick={() => navigate(listPath.replace('/edit', '/create'))}
-              >
-                Create New {title}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const backPath = id ? `${listPath}/show/${encodeURIComponent(id)}` : listPath;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => navigate(listPath)}
-          >
-            <ArrowLeftIcon className="h-4 w-4 mr-2" />
-            Back to {title}s
-          </Button>
-          <h1 className="text-2xl font-bold">{id ? "Edit" : "Create"} {title}</h1>
-        </div>
+      <div className="flex items-center gap-4">
+        <Button variant="outline" size="sm" onClick={() => navigate(backPath)}>
+          <ArrowLeftIcon className="mr-2 h-4 w-4" />
+          Back
+        </Button>
+        <h1 className="text-2xl font-bold">Edit {title.toLowerCase()}</h1>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>{id ? "Edit" : "Create"} {title}</CardTitle>
+          <CardTitle className="break-all">
+            {title} {id}
+          </CardTitle>
           <CardDescription>
-            {id ? `Update ${title.toLowerCase()} information` : `Create a new ${title.toLowerCase()}`}
+            {error
+              ? error.message
+              : "Changes are reviewed in a confirmation step before anything is saved."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {fields.map((field) => (
-                <div key={field.key} className={field.type === 'checkbox' ? "flex items-center space-x-3" : "space-y-2"}>
-                  {field.type === 'checkbox' ? (
-                    <>
-                      <input
-                        id={field.key}
-                        type="checkbox"
-                        checked={!!formData[field.key]}
-                        onChange={(e) => handleInputChange(field.key, e.target.checked)}
-                        disabled={isSubmitting}
-                        className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
-                      />
-                      <Label htmlFor={field.key} className="cursor-pointer">{field.label}</Label>
-                    </>
-                  ) : (
-                    <>
-                      <Label htmlFor={field.key}>{field.label}</Label>
-                      {field.type === 'textarea' ? (
-                        <Textarea
-                          id={field.key}
-                          value={String(formData[field.key] || '')}
-                          onChange={(e) => handleInputChange(field.key, e.target.value)}
-                          placeholder={`Enter ${field.label.toLowerCase()}`}
-                          disabled={isSubmitting}
-                        />
-                      ) : (
-                        <Input
-                          id={field.key}
-                          type={field.type}
-                          value={String(formData[field.key] || '')}
-                          onChange={(e) => handleInputChange(field.key, e.target.value)}
-                          placeholder={`Enter ${field.label.toLowerCase()}`}
-                          disabled={isSubmitting}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-            
-            <div className="flex gap-2">
-              <Button 
-                type="submit" 
-                disabled={isSubmitting}
-                className="flex items-center justify-center"
-              >
-                {isSubmitting && <LoadingSpinner size="sm" className="mr-2" />}
-                <CheckIcon className="h-4 w-4 mr-2" />
-                {isSubmitting ? "Saving..." : "Save"}
-              </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => navigate(listPath)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
+          {isLoading ? (
+            <LoadingCard lines={fields.length} />
+          ) : error || !record || !id ? (
+            <p className="text-sm text-muted-foreground">The record could not be loaded for editing.</p>
+          ) : (
+            // Keyed by record identity so the form re-initialises if a different record loads.
+            <EditForm key={String(record.id ?? id)} {...props} id={id} record={record} />
+          )}
         </CardContent>
       </Card>
     </div>

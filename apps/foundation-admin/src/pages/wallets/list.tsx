@@ -1,15 +1,14 @@
 import { GenericList } from "@/components/GenericList";
+import { WALLET_LIST_COLUMNS } from "@/resources/fields";
 
 export const WalletList = () => (
   <GenericList
     resource="wallet"
     title="Wallets"
-    description="Manage user wallets and security settings"
+    singularTitle="Wallet"
+    description="User wallets and their security settings"
     basePath="/wallets"
-    columns={['id', 'publicKey', 'userId', 'isPinSet', 'isLocked', 'dailyTransactionLimit', 'createdAt']}
+    columns={WALLET_LIST_COLUMNS}
     searchPlaceholder="Search by wallet ID or public key..."
-    canDelete={false}
-    canEdit={false}
-    enableSearch={true}
   />
 );
