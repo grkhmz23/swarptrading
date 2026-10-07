@@ -49,6 +49,12 @@ export const LEGAL_SITE_URL = stripTrailingSlash(
 export const TERMS_URL = `${LEGAL_SITE_URL}/terms`;
 export const PRIVACY_URL = `${LEGAL_SITE_URL}/privacy`;
 
+/**
+ * Optional notice shown on every page, e.g. "Preview — sample data" for a
+ * build pointed at the preview API. Empty in production builds.
+ */
+export const ENVIRONMENT_BANNER = (process.env.NEXT_PUBLIC_ENVIRONMENT_BANNER || '').trim().slice(0, 120);
+
 /** Solana Explorer link for a transaction signature or address on the configured cluster. */
 export function explorerUrl(kind: 'tx' | 'address', value: string): string {
   const base = `https://explorer.solana.com/${kind}/${encodeURIComponent(value)}`;

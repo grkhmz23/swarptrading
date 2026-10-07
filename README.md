@@ -8,8 +8,9 @@ SwarpPay and SwarpLaunch front-ends, split out of
 | --- | --- | --- |
 | `apps/foundation-dashboard` | Next.js 16, React 19, Redux, `@solana/web3.js` | Custodial Solana wallet, swap, SwarpLaunch launchpad. Target: `app.swarppay.com` |
 | `apps/foundation-admin` | Vite, React 19, Refine | Admin console: users, wallets, transactions, launchpad projects |
+| `apps/preview-api` | Next.js route handlers | **Preview only.** Answers the dashboard's API calls with sample data so the UI can be shown without the real backend. Cannot move funds. |
 
-The backend API both apps call is **not** in this repository.
+The real backend API both apps call is **not** in this repository.
 
 ## Run
 
@@ -30,6 +31,12 @@ Each app is its own deployment (`apps/<name>` as the root directory; `amplify.ym
 is included for AWS Amplify, Vercel also works). Point `app.swarppay.com` at the
 dashboard and allow that origin in the backend CORS settings.
 
+## Team preview (no backend)
+
+To show the dashboard and launchpad before the backend is available, deploy
+`apps/preview-api` and point a dashboard build at it. Step-by-step Vercel setup:
+[`docs/DEPLOY_PREVIEW.md`](docs/DEPLOY_PREVIEW.md).
+
 ## Status
 
 The audit in [`docs/AUDIT.md`](docs/AUDIT.md) has been worked through in both
@@ -40,4 +47,5 @@ in [`docs/BACKEND_REQUIREMENTS.md`](docs/BACKEND_REQUIREMENTS.md).
 ## Checks
 
 CI (`.github/workflows/build.yml`) runs, for each app: type-check, lint, tests
-(dashboard), `npm audit --omit=dev --audit-level=high`, and a production build.
+(dashboard, preview-api), `npm audit --omit=dev --audit-level=high`, and a
+production build.

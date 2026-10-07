@@ -46,6 +46,7 @@ See `.env.example`; values are read only in `src/config/env.ts`.
 | `NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY` | no | MoonPay is offered only with a `pk_test_` key |
 | `NEXT_PUBLIC_LEGAL_SITE_URL` | no | Where Terms / Privacy live |
 | `NEXT_PUBLIC_SWARP_PRESALE_PRICE_USD` | no | Shown on the SWARP card when set |
+| `NEXT_PUBLIC_ENVIRONMENT_BANNER` | no | Notice pinned to the top of every page (e.g. for a build that uses `apps/preview-api`) |
 
 ## How it is put together
 

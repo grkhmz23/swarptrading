@@ -52,3 +52,25 @@ jobs:
       - run: npm run build
         env:
           VITE_ADMIN_API_URL: https://api.example.invalid
+
+  preview-api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/preview-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/preview-api/package-lock.json
+      - run: npm ci
+      # Response types are imported from the dashboard's API client, so a change
+      # there that the preview data no longer matches fails here.
+      - run: npm run type-check
+      - run: npm run lint
+      - run: npm test
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
