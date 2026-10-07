@@ -8,6 +8,7 @@ import { AppDispatch, RootState } from "@/store";
 import { fetchContacts, addContact } from "@/store/slices/contactSlice";
 import Image from "next/image";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 const resolveProfileImageSrc = (value?: string | null) => {
   if (!value) return null;
   const trimmed = value.trim();
@@ -21,7 +22,7 @@ const resolveProfileImageSrc = (value?: string | null) => {
   // Allow http/https URLs that point to configured remote hosts
   try {
     const asUrl = new URL(trimmed);
-    if (asUrl.protocol === "http:" || asUrl.protocol === "https:") {
+    if (asUrl.protocol === "https:") {
       return trimmed;
     }
   } catch {
@@ -49,7 +50,7 @@ export default function AddressBook() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setAuthToken(localStorage.getItem("swarp_fd_access_token"));
+    setAuthToken(getAccessToken());
 
     const initialQuery = localStorage.getItem("swarp_fd_address_book_search") || "";
     setSearchQuery(initialQuery);
@@ -148,6 +149,7 @@ export default function AddressBook() {
                       alt={c.nickname}
                       width={38}
                       height={38}
+                      unoptimized
                       className="rounded-full object-cover"
                     />
                   ) : (

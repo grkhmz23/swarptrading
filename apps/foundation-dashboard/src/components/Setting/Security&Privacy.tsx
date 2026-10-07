@@ -1,59 +1,63 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import SettingsTile from "./shared/SettingsTile";
 import ChangePasscodeModal from "./ChangePasscodeModal";
 import { apiService } from "@/services/api";
-import { useRouter } from "next/navigation";
 import DeleteAccountModal from "./DeleteAccountModal";
 import { useT } from "@/i18n/I18nProvider";
+import { clearSession, getAccessToken } from '@/lib/session';
+import { ApiError, errorMessage } from '@/lib/http';
 
 export default function SecurityPrivacy() {
   const t = useT();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const router = useRouter();
   const handlePasscodeSubmit = async (data: { oldPasscode: string; newPasscode: string }) => {
-    const token = localStorage.getItem("swarp_fd_access_token");
-    if (!token) throw new Error("Please login first");
+    const token = getAccessToken();
+    if (!token) throw new Error("Your session has expired. Please sign in again.");
+    await apiService.updatePasscode(token, data.oldPasscode, data.newPasscode);
+  };
 
+  /**
+   * Account deletion requires the wallet PIN and an empty wallet, so a stolen
+   * session or a mis-click cannot destroy an account that still holds funds.
+   */
+  const handleDeleteAccount = async (pin: string) => {
+    const token = getAccessToken();
+    if (!token) throw new Error("Your session has expired. Please sign in again.");
+
+    setIsDeleting(true);
     try {
-      await apiService.updatePasscode(token, data.oldPasscode, data.newPasscode);
+      await apiService.verifyWalletPIN(pin, token);
+
+      const wallets = await apiService.getUserWallets(token);
+      for (const wallet of wallets) {
+        if (Number(wallet.balance) > 0) {
+          throw new Error("Your wallet still holds SOL. Withdraw all funds before deleting your account.");
+        }
+        const { balances } = await apiService.getTokenBalances(wallet.id, token);
+        if (balances?.some((b) => Number(b.balance) > 0)) {
+          throw new Error("Your wallet still holds tokens. Withdraw all funds before deleting your account.");
+        }
+      }
+
+      await apiService.deleteUserAccount(token);
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        throw err;
+      if (err instanceof ApiError && (err.statusCode === 400 || err.statusCode === 401 || err.statusCode === 403)) {
+        throw new Error(err.message || "Incorrect passcode");
       }
-      if (err && typeof err === "object" && "message" in err && typeof (err as { message?: unknown }).message === "string") {
-        throw new Error((err as { message: string }).message);
-      }
-      throw new Error("Failed to update passcode");
+      throw new Error(errorMessage(err, "Failed to delete account"));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-const handleDeleteAccount = async () => {
-  const token = localStorage.getItem("swarp_fd_access_token");
-  if (!token) {
-    throw new Error("Please login first");
-  }
-
-  setIsDeleting(true);
-
-  try {
-    await apiService.deleteUserAccount(token);
-    // success -> do nothing, modal will handle it
-     router.push("/");
-      window.location.reload();
-  } catch (err: unknown) {
-    console.error("Error deleting account:", err);
-    const message =
-      err instanceof Error ? err.message : "Failed to delete account";
-    throw new Error(message); // modal catches this
-  } finally {
-    setIsDeleting(false);
-  }
-};
-
+  const handleDeleted = useCallback(() => {
+    clearSession();
+    window.location.replace("/");
+  }, []);
 
   return (
     <div className="w-full mx-auto flex flex-wrap justify-center gap-7 cursor-default px-4 sm:px-0">
@@ -114,6 +118,7 @@ const handleDeleteAccount = async () => {
               isOpen={showDeleteModal}
               onClose={() => setShowDeleteModal(false)}
               onConfirm={handleDeleteAccount}
+              onDeleted={handleDeleted}
               isLoading={isDeleting}
             />
           </div>

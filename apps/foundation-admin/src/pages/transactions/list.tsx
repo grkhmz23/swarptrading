@@ -1,15 +1,14 @@
 import { GenericList } from "@/components/GenericList";
+import { TRANSACTION_LIST_COLUMNS } from "@/resources/fields";
 
 export const TransactionList = () => (
   <GenericList
     resource="transaction"
     title="Transactions"
-    description="View all financial transactions"
+    singularTitle="Transaction"
+    description="All wallet transactions"
     basePath="/transactions"
-    columns={['id', 'amount', 'status', 'transactionHash', 'isConfirmed', 'createdAt']}
-    searchPlaceholder="Search by transaction hash..."
-    canDelete={false}
-    canEdit={false}
-    enableSearch={true}
+    columns={TRANSACTION_LIST_COLUMNS}
+    searchPlaceholder="Search by transaction signature..."
   />
 );

@@ -5,6 +5,12 @@ import { apiService, LaunchpadProject } from "@/services/api";
 import { Toast } from "@/components/ui/Toast";
 import { useT } from "@/i18n/I18nProvider";
 import dynamic from "next/dynamic";
+import { getAccessToken } from '@/lib/session';
+import { ApiError, errorMessage, newIdempotencyKey } from '@/lib/http';
+import { floorToDecimals, fractionOfSpendable, isAmountInput, parseAmount, SOL_FEE_RESERVE } from '@/lib/amount';
+import { NATIVE_SOL_DECIMALS } from '@/lib/solana';
+import { PinConfirmModal } from '@/components/ui/PinConfirmModal';
+import { cssUrl } from '@/lib/css';
 
 // Dynamic import for TradingViewChart to avoid SSR issues with lightweight-charts
 const TradingViewChart = dynamic(
@@ -113,7 +119,31 @@ interface TokenDetailProps {
 }
 
 // Tab types
-type TabType = "chart" | "comments" | "trades" | "holders";
+type TabType = "chart" | "trades" | "holders";
+
+/** Launchpad tokens accept up to 9 decimals in input; the backend rejects finer amounts. */
+const LAUNCHPAD_INPUT_DECIMALS = 9;
+const SLIPPAGE_OPTIONS = [0.5, 1, 2, 5];
+
+interface TradeQuote {
+  mode: "buy" | "sell";
+  /** Normalised amount text the quote was fetched for. */
+  inputText: string;
+  outputAmount: number;
+  fee: number;
+  priceImpact: number;
+  fetchedAt: number;
+}
+
+interface PendingTrade {
+  mode: "buy" | "sell";
+  amount: number;
+  amountText: string;
+  expectedOutput: number;
+  minimumOutput: number;
+  slippage: number;
+  priceImpact: number;
+}
 
 // Format helpers
 const formatPrice = (price: number | string | undefined | null): string => {
@@ -220,10 +250,17 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   const [tradeError, setTradeError] = useState<string | null>(null);
   const [tradeSuccess, setTradeSuccess] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
-  const [quote, setQuote] = useState<{ outputAmount?: number; fee?: number } | null>(null);
+  const [quote, setQuote] = useState<TradeQuote | null>(null);
   const [isGettingQuote, setIsGettingQuote] = useState(false);
-  const [walletBalance, setWalletBalance] = useState<number>(0);
-  const [userTokenBalance, setUserTokenBalance] = useState<number>(0);
+  const [slippage, setSlippage] = useState(1);
+  /** SOL in the custodial wallet; null when it could not be loaded. */
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  /** This token held by the user; null when it could not be loaded. */
+  const [userTokenBalance, setUserTokenBalance] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pendingTrade, setPendingTrade] = useState<PendingTrade | null>(null);
+  const tradeKeyRef = useRef<string | null>(null);
+  const quoteSeqRef = useRef(0);
   const [trades, setTrades] = useState<Array<{
     id: string;
     type: 'buy' | 'sell';
@@ -243,7 +280,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     rank: number;
     walletAddress: string;
     tokenAmount: string;
-    valueUsd: string;
     percentage: string;
     user?: {
       id: string;
@@ -254,35 +290,11 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   const [isLoadingTrades, setIsLoadingTrades] = useState(false);
   const [isLoadingHolders, setIsLoadingHolders] = useState(false);
 
-  // Portfolio state - user's investment in this specific project
-  const [_userInvestment, setUserInvestment] = useState<{
-    tokenBalance: string;
-    totalSolInvested: string;
-    averageBuyPrice: string;
-    currentValueSol: string;
-    unrealizedPnlSol: string;
-    unrealizedPnlPercent: string;
-    tradeCount: number;
-  } | null>(null);
-  const [_isLoadingPortfolio, setIsLoadingPortfolio] = useState(false);
-
-  // User's trade history for this project
-  const [_userTradeHistory, setUserTradeHistory] = useState<Array<{
-    id: string;
-    type: 'buy' | 'sell';
-    solAmount: string;
-    tokenAmount: string;
-    pricePerToken?: string;
-    createdAt: string;
-    transactionHash?: string;
-  }>>([]);
-  const [_isLoadingTradeHistory, setIsLoadingTradeHistory] = useState(false);
   const [isWatching, setIsWatching] = useState(false);
   const [isTogglingWatchlist, setIsTogglingWatchlist] = useState(false);
 
   // Refs for scroll-to-section navigation
   const chartRef = useRef<HTMLDivElement>(null);
-  const commentsRef = useRef<HTMLDivElement>(null);
   const tradesRef = useRef<HTMLDivElement>(null);
   const holdersRef = useRef<HTMLDivElement>(null);
 
@@ -291,7 +303,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     setActiveTab(tab);
     const refs: Record<TabType, React.RefObject<HTMLDivElement | null>> = {
       chart: chartRef,
-      comments: commentsRef,
       trades: tradesRef,
       holders: holdersRef,
     };
@@ -299,32 +310,53 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   };
 
   const fetchWalletBalance = useCallback(async () => {
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      setWalletBalance(null);
+      return;
+    }
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
-      if (!accessToken) return;
-
       const wallets = await apiService.getUserWallets(accessToken);
-      if (wallets && wallets.length > 0) {
-        setWalletBalance(wallets[0].balance || 0);
-      }
-    } catch (err) {
-      console.error("Failed to fetch wallet balance:", err);
+      const balance = Number(wallets?.[0]?.balance);
+      setWalletBalance(Number.isFinite(balance) ? balance : null);
+    } catch {
+      setWalletBalance(null);
     }
   }, []);
 
-  const fetchProject = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const fetchTokenBalance = useCallback(async () => {
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      setUserTokenBalance(null);
+      return;
+    }
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const response = await apiService.getLaunchpadTokenBalance(projectId, accessToken);
+      const balance = Number(response?.balance);
+      setUserTokenBalance(Number.isFinite(balance) ? balance : 0);
+    } catch {
+      setUserTokenBalance(null);
+    }
+  }, [projectId]);
+
+  /** Initial load shows the skeleton; later refreshes keep the page (and chart) mounted. */
+  const fetchProject = useCallback(async (background = false) => {
+    if (background) setIsRefreshing(true);
+    else {
+      setIsLoading(true);
+      setError(null);
+    }
+    try {
+      const accessToken = getAccessToken();
       const response = await apiService.getLaunchpadProject(projectId, accessToken);
       setProject(response);
-    } catch (err) {
-      console.error("Failed to fetch project:", err);
-      setError(t.launchpad?.tokenDetail?.status?.failedToLoad || "Failed to load token details");
+    } catch {
+      if (!background) setError(t.launchpad?.tokenDetail?.status?.failedToLoad || "Failed to load token details");
     } finally {
-      setIsLoading(false);
+      if (background) setIsRefreshing(false);
+      else setIsLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- translations only affect the error text
   }, [projectId]);
 
   const fetchTrades = useCallback(async () => {
@@ -333,7 +365,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
       const response = await apiService.getLaunchpadProjectTrades(projectId, { limit: 50 });
       setTrades(response.trades.map((trade) => ({
         id: trade.id,
-        type: trade.type,
+        type: String(trade.type).toLowerCase() === "sell" ? "sell" : "buy",
         solAmount: String(trade.amount),
         tokenAmount: String(trade.tokenAmount),
         pricePerToken: String(trade.price),
@@ -344,8 +376,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
         createdAt: trade.timestamp,
         transactionHash: trade.signature,
       })));
-    } catch (err) {
-      console.error("Failed to fetch trades:", err);
+    } catch {
       setTrades([]);
     } finally {
       setIsLoadingTrades(false);
@@ -360,93 +391,21 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
         rank: index + 1,
         walletAddress: holder.address,
         tokenAmount: String(holder.balance),
-        valueUsd: "0",
         percentage: String(holder.percentage),
         user: holder.username || holder.avatar
           ? { id: holder.address, username: holder.username, profilePicture: holder.avatar }
           : undefined,
       })));
-    } catch (err) {
-      console.error("Failed to fetch holders:", err);
+    } catch {
       setHolders([]);
     } finally {
       setIsLoadingHolders(false);
     }
   }, [projectId]);
 
-  const fetchUserPortfolio = useCallback(async () => {
-    setIsLoadingPortfolio(true);
-    try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
-      if (!accessToken) {
-        setUserInvestment(null);
-        return;
-      }
-
-      const response = await apiService.getLaunchpadPortfolio(accessToken);
-      // Find the investment for this specific project
-      const projectInvestment = response.investments?.find(
-        (inv: { project?: { id: string } }) => inv.project?.id === projectId
-      );
-
-      if (projectInvestment) {
-        setUserInvestment({
-          tokenBalance: projectInvestment.tokenBalance,
-          totalSolInvested: projectInvestment.totalSolInvested,
-          averageBuyPrice: projectInvestment.averageBuyPrice,
-          currentValueSol: projectInvestment.currentValueSol,
-          unrealizedPnlSol: projectInvestment.unrealizedPnlSol,
-          unrealizedPnlPercent: projectInvestment.unrealizedPnlPercent,
-          tradeCount: projectInvestment.tradeCount,
-        });
-        // Also update userTokenBalance for sell functionality
-        setUserTokenBalance(parseFloat(projectInvestment.tokenBalance) || 0);
-      } else {
-        setUserInvestment(null);
-      }
-    } catch (err) {
-      console.error("Failed to fetch user portfolio:", err);
-      setUserInvestment(null);
-    } finally {
-      setIsLoadingPortfolio(false);
-    }
-  }, [projectId]);
-
-  const fetchUserTradeHistory = useCallback(async () => {
-    setIsLoadingTradeHistory(true);
-    try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
-      if (!accessToken) {
-        setUserTradeHistory([]);
-        return;
-      }
-
-      const response = await apiService.getLaunchpadUserTradeHistory(accessToken, { limit: 20 });
-      // Filter trades for this specific project
-      const projectTrades = response.trades?.filter(
-        (trade) => trade.project?.id === projectId
-      ) || [];
-
-      setUserTradeHistory(projectTrades.map(t => ({
-        id: t.id,
-        type: t.type,
-        solAmount: t.solAmount,
-        tokenAmount: t.tokenAmount,
-        pricePerToken: t.pricePerToken,
-        createdAt: t.createdAt,
-        transactionHash: t.transactionHash,
-      })));
-    } catch (err) {
-      console.error("Failed to fetch user trade history:", err);
-      setUserTradeHistory([]);
-    } finally {
-      setIsLoadingTradeHistory(false);
-    }
-  }, [projectId]);
-
   const fetchWatchlistStatus = useCallback(async () => {
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) {
         setIsWatching(false);
         return;
@@ -457,8 +416,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
         (p: { id: string }) => p.id === projectId
       ) || false;
       setIsWatching(isInWatchlist);
-    } catch (err) {
-      console.error("Failed to fetch watchlist status:", err);
+    } catch {
       setIsWatching(false);
     }
   }, [projectId]);
@@ -466,18 +424,17 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   useEffect(() => {
     fetchProject();
     fetchWalletBalance();
-    // Fetch trades and holders on initial load (all sections are visible)
+    fetchTokenBalance();
     fetchTrades();
     fetchHolders();
-    fetchUserPortfolio();
-    fetchUserTradeHistory();
     fetchWatchlistStatus();
-  }, [fetchProject, fetchWalletBalance, fetchTrades, fetchHolders, fetchUserPortfolio, fetchUserTradeHistory, fetchWatchlistStatus]);
+  }, [fetchProject, fetchWalletBalance, fetchTokenBalance, fetchTrades, fetchHolders, fetchWatchlistStatus]);
 
   const handleToggleWatchlist = async () => {
-    const accessToken = localStorage.getItem("swarp_fd_access_token");
+    const accessToken = getAccessToken();
     if (!accessToken) {
       setTradeError(t.launchpad?.tokenDetail?.toast?.loginToAddWatchlist || "Please log in to add to watchlist");
+      setShowToast(true);
       return;
     }
 
@@ -486,8 +443,8 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
       const response = await apiService.toggleLaunchpadWatchlist(projectId, accessToken);
       setIsWatching(response.isWatching);
     } catch (err) {
-      console.error("Failed to toggle watchlist:", err);
-      setTradeError(t.launchpad?.tokenDetail?.toast?.failedToUpdateWatchlist || "Failed to update watchlist");
+      setTradeError(errorMessage(err, t.launchpad?.tokenDetail?.toast?.failedToUpdateWatchlist || "Failed to update watchlist"));
+      setShowToast(true);
     } finally {
       setIsTogglingWatchlist(false);
     }
@@ -511,142 +468,172 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     };
   }, [trades]);
 
-  // Get quote when amount changes
-  const getQuote = useCallback(async (amount: string) => {
-    if (!amount || !project || parseFloat(amount) <= 0) {
+  const isBuy = tradeMode === "buy";
+  const isMigrated = project?.status === "migrated";
+  const inputDecimals = isBuy ? NATIVE_SOL_DECIMALS : LAUNCHPAD_INPUT_DECIMALS;
+  const spendable = isBuy
+    ? walletBalance === null ? null : Math.max(0, walletBalance - SOL_FEE_RESERVE)
+    : userTokenBalance;
+  const parsedInput = parseAmount(tokenAmount, inputDecimals);
+
+  /** Fetch a quote for the current amount; stale responses are ignored. */
+  const getQuote = useCallback(async () => {
+    const seq = ++quoteSeqRef.current;
+    const parsed = parseAmount(tokenAmount, tradeMode === "buy" ? NATIVE_SOL_DECIMALS : LAUNCHPAD_INPUT_DECIMALS);
+    if (!project || !parsed.ok) {
       setQuote(null);
+      setIsGettingQuote(false);
       return;
     }
-
     setIsGettingQuote(true);
     try {
-      const numAmount = parseFloat(amount);
-      if (tradeMode === "buy") {
-        // For buy, amount is in SOL
-        const response = await apiService.getLaunchpadBuyQuote(project.id, numAmount);
-        setQuote({ outputAmount: response.outputAmount, fee: response.fee });
-      } else {
-        // For sell, amount is in tokens
-        const response = await apiService.getLaunchpadSellQuote(project.id, numAmount);
-        setQuote({ outputAmount: response.outputAmount, fee: response.fee });
-      }
-    } catch (err) {
-      console.error("Failed to get quote:", err);
-      setQuote(null);
+      const response = tradeMode === "buy"
+        ? await apiService.getLaunchpadBuyQuote(project.id, parsed.value)
+        : await apiService.getLaunchpadSellQuote(project.id, parsed.value);
+      if (seq !== quoteSeqRef.current) return;
+      setQuote({
+        mode: tradeMode,
+        inputText: parsed.text,
+        outputAmount: Number(response.outputAmount),
+        fee: Number(response.fee),
+        priceImpact: Number(response.priceImpact),
+        fetchedAt: Date.now(),
+      });
+    } catch {
+      if (seq === quoteSeqRef.current) setQuote(null);
     } finally {
-      setIsGettingQuote(false);
+      if (seq === quoteSeqRef.current) setIsGettingQuote(false);
     }
-  }, [project, tradeMode]);
+  }, [project, tradeMode, tokenAmount]);
 
-  // Debounced quote fetch
+  // Debounce while typing, then keep the quote fresh every 10s.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      getQuote(tokenAmount);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [tokenAmount, getQuote]);
+    setQuote(null);
+    const timer = setTimeout(getQuote, 400);
+    const refresh = setInterval(() => {
+      if (document.visibilityState === "visible") getQuote();
+    }, 10_000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(refresh);
+    };
+  }, [getQuote]);
 
-  const handleTrade = async () => {
-    if (!project || !tokenAmount || parseFloat(tokenAmount) <= 0) {
-      setTradeError(t.launchpad?.tokenDetail?.toast?.enterValidAmount || "Please enter a valid amount");
-      setShowToast(true);
+  const switchMode = (mode: "buy" | "sell") => {
+    if (mode === tradeMode) return;
+    setTradeMode(mode);
+    setTokenAmount("");
+    setQuote(null);
+    tradeKeyRef.current = null;
+  };
+
+  const setPercent = (percent: number) => {
+    if (isBuy) {
+      if (walletBalance === null) return;
+      setTokenAmount(fractionOfSpendable(walletBalance, percent / 100, NATIVE_SOL_DECIMALS, true));
+    } else {
+      if (userTokenBalance === null) return;
+      // "Max" sells exactly the reported balance; fractions round down.
+      setTokenAmount(percent === 100 ? String(userTokenBalance) : floorToDecimals((userTokenBalance * percent) / 100, LAUNCHPAD_INPUT_DECIMALS));
+    }
+  };
+
+  const showError = (message: string) => {
+    setTradeSuccess(null);
+    setTradeError(message);
+    setShowToast(true);
+  };
+
+  /** Validate and open the review + PIN step. */
+  const handleTrade = () => {
+    if (!project || isTrading) return;
+    if (isMigrated) {
+      showError("This token has graduated from the bonding curve. Trade it on a DEX instead.");
       return;
     }
-
-    const amount = parseFloat(tokenAmount);
-
-    if (tradeMode === "buy") {
-      if (amount > walletBalance) {
-        setTradeError(t.launchpad?.tokenDetail?.toast?.insufficientSol || `Insufficient SOL balance. You have ${walletBalance.toFixed(4)} SOL but trying to spend ${amount.toFixed(4)} SOL.`);
-        setShowToast(true);
-        return;
-      }
-    } else {
-      // Sell mode - check token balance
-      if (amount > userTokenBalance) {
-        setTradeError(t.launchpad?.tokenDetail?.toast?.insufficientTokens?.replace('{{ticker}}', project.ticker) || `Insufficient ${project.ticker} balance. You have ${userTokenBalance.toLocaleString()} ${project.ticker} but trying to sell ${amount.toLocaleString()}.`);
-        setShowToast(true);
-        return;
-      }
+    if (spendable === null) {
+      showError("Your balance could not be loaded. Please refresh and try again.");
+      return;
     }
+    const parsed = parseAmount(tokenAmount, inputDecimals, spendable);
+    if (!parsed.ok) {
+      if (parsed.problem === "insufficient") {
+        showError(isBuy
+          ? (t.launchpad?.tokenDetail?.toast?.insufficientSol || `Insufficient SOL. Keep at least ${SOL_FEE_RESERVE} SOL for network fees.`)
+          : (t.launchpad?.tokenDetail?.toast?.insufficientTokens?.replace('{{ticker}}', project.ticker) || `Insufficient ${project.ticker} balance.`));
+      } else {
+        showError(parsed.message);
+      }
+      return;
+    }
+    if (!quote || quote.mode !== tradeMode || quote.inputText !== parsed.text || !(quote.outputAmount > 0)) {
+      showError("Waiting for a price quote. Please try again in a moment.");
+      return;
+    }
+    const minimumOutput = quote.outputAmount * (1 - slippage / 100);
+    const same = pendingTrade && pendingTrade.mode === tradeMode && pendingTrade.amountText === parsed.text;
+    if (!same || !tradeKeyRef.current) tradeKeyRef.current = newIdempotencyKey();
+    setPendingTrade({ mode: tradeMode, amount: parsed.value, amountText: parsed.text, expectedOutput: quote.outputAmount, minimumOutput, slippage, priceImpact: quote.priceImpact });
+  };
+
+  /** PIN verified: submit exactly what was reviewed. */
+  const executeTrade = async () => {
+    if (!project || !pendingTrade || !tradeKeyRef.current) return;
+    const accessToken = getAccessToken();
+    if (!accessToken) throw new Error(t.launchpad?.tokenDetail?.toast?.loginRequired || "Please log in to trade.");
 
     setIsTrading(true);
     setTradeError(null);
     setTradeSuccess(null);
     setShowToast(false);
-
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token") || "";
+      const response = pendingTrade.mode === "buy"
+        ? await apiService.buyLaunchpadTokensCustodial(project.id, pendingTrade.amount, accessToken, pendingTrade.slippage, tradeKeyRef.current, pendingTrade.minimumOutput)
+        : await apiService.sellLaunchpadTokensCustodial(project.id, pendingTrade.amount, accessToken, pendingTrade.slippage, tradeKeyRef.current, pendingTrade.minimumOutput);
 
-      const slippageValue = 5; // Default 5% slippage tolerance
+      if (!response?.success) {
+        throw new ApiError(response?.message || "Trade was rejected.", 400, "Trade Rejected");
+      }
+      tradeKeyRef.current = null;
+      setPendingTrade(null);
 
-      if (tradeMode === "buy") {
-        // Use custodial buy (server signs with Swarp Foundation wallet)
-        const response = await apiService.buyLaunchpadTokensCustodial(
-          project.id,
-          amount,
-          accessToken,
-          slippageValue
-        );
-        const tokensReceived = parseFloat(response.trade.tokenAmount);
+      if (pendingTrade.mode === "buy") {
+        const tokensReceived = Number(response.trade?.tokenAmount);
+        const amountText = Number.isFinite(tokensReceived) ? tokensReceived.toLocaleString() : "your";
         setTradeSuccess(
-          t.launchpad?.tokenDetail?.toast?.successfullyBought
-            ?.replace('{{amount}}', tokensReceived.toLocaleString())
-            ?.replace('{{ticker}}', project.ticker) ||
-          `Successfully bought ${tokensReceived.toLocaleString()} ${project.ticker}!`
+          t.launchpad?.tokenDetail?.toast?.successfullyBought?.replace('{{amount}}', amountText)?.replace('{{ticker}}', project.ticker) ||
+          `Successfully bought ${amountText} ${project.ticker}!`
         );
       } else {
-        // Use custodial sell
-        const response = await apiService.sellLaunchpadTokensCustodial(
-          project.id,
-          amount,
-          accessToken,
-          slippageValue
-        );
-        const solReceived = parseFloat(response.trade.solAmount);
+        const solReceived = Number(response.trade?.solAmount);
+        const solText = Number.isFinite(solReceived) ? solReceived.toFixed(4) : "—";
         setTradeSuccess(
-          t.launchpad?.tokenDetail?.toast?.successfullySold
-            ?.replace('{{amount}}', amount.toLocaleString())
-            ?.replace('{{ticker}}', project.ticker)
-            ?.replace('{{solAmount}}', solReceived.toFixed(4)) ||
-          `Successfully sold ${amount.toLocaleString()} ${project.ticker} for ${solReceived.toFixed(4)} SOL!`
+          t.launchpad?.tokenDetail?.toast?.successfullySold?.replace('{{amount}}', pendingTrade.amountText)?.replace('{{ticker}}', project.ticker)?.replace('{{solAmount}}', solText) ||
+          `Successfully sold ${pendingTrade.amountText} ${project.ticker} for ${solText} SOL!`
         );
       }
-
-      // Show success toast
       setShowToast(true);
-
-      // Clear input and refresh project data, wallet balance, and trades
       setTokenAmount("");
       setQuote(null);
-      fetchProject();
-      fetchWalletBalance();
-      fetchTrades(); // Refresh trades list after successful trade
-      fetchHolders(); // Refresh holders list after successful trade
-      fetchUserPortfolio(); // Refresh portfolio to update token balance
     } catch (err: unknown) {
-      console.error("Trade failed:", err);
-      let errorMessage = t.launchpad?.tokenDetail?.toast?.tradeFailed || "Trade failed. Please try again.";
-
-      if (err instanceof Error) {
-        const msg = err.message.toLowerCase();
-        if (msg.includes('insufficient') && msg.includes('sol')) {
-          errorMessage = t.launchpad?.tokenDetail?.toast?.insufficientSol || `Insufficient SOL balance. You need more SOL to complete this trade.`;
-        } else if (msg.includes('insufficient') && (msg.includes('token') || msg.includes('balance'))) {
-          errorMessage = t.launchpad?.tokenDetail?.toast?.insufficientTokens?.replace('{{ticker}}', project.ticker) || `Insufficient ${project.ticker} balance to complete this sale.`;
-        } else if (msg.includes('slippage')) {
-          errorMessage = t.launchpad?.tokenDetail?.toast?.slippageError || "Price changed too much. Please try again.";
-        } else if (msg.includes('unauthorized') || msg.includes('401')) {
-          errorMessage = t.launchpad?.tokenDetail?.toast?.loginRequired || "Please log in to trade.";
-        } else {
-          errorMessage = err.message;
-        }
+      if (err instanceof ApiError && err.statusCode === 0) {
+        // The request may have been executed. Keep the idempotency key so a retry cannot trade twice.
+        setPendingTrade(null);
+        showError("Network error: the trade status is unknown. Check Trade History before trying again.");
+        return;
       }
-
-      setTradeError(errorMessage);
-      setShowToast(true);
+      const message = err instanceof ApiError && /slippage/i.test(err.message)
+        ? (t.launchpad?.tokenDetail?.toast?.slippageError || "Price moved more than your slippage setting. Get a new quote and try again.")
+        : errorMessage(err, t.launchpad?.tokenDetail?.toast?.tradeFailed || "Trade failed. Please try again.");
+      throw new Error(message);
     } finally {
       setIsTrading(false);
+      // Refresh everything in the background, whatever the outcome.
+      fetchProject(true);
+      fetchWalletBalance();
+      fetchTokenBalance();
+      fetchTrades();
+      fetchHolders();
     }
   };
 
@@ -855,6 +842,16 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     );
   }
 
+  const currentPriceSol = project ? Number(project.currentPrice ?? project.price) || 0 : 0;
+  const socialLinks = project
+    ? ([
+        { label: "Website", href: project.websiteUrl },
+        { label: "X", href: project.twitterUrl },
+        { label: "Telegram", href: project.telegramUrl },
+        { label: "Discord", href: project.discordUrl },
+      ].filter((link): link is { label: string; href: string } => typeof link.href === "string" && /^https:\/\/[^\s]+$/i.test(link.href)))
+    : [];
+
   if (error || !project) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -884,10 +881,18 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
           className="flex items-center gap-6 sticky top-0 z-10"
           style={{ padding: "28px 28px 0px", backgroundColor: colors["Neutral/600"] }}
         >
-          {(["chart", "comments", "trades", "holders"] as TabType[]).map((tab) => {
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to launchpad"
+            className="flex items-center gap-1 cursor-pointer"
+            style={{ padding: "0px 4px 8px", ...typography["P2/Medium"], color: colors["Neutral/100"] }}
+          >
+            ← Back
+          </button>
+          {(["chart", "trades", "holders"] as TabType[]).map((tab) => {
             const tabLabels = {
               chart: t.launchpad?.tokenDetail?.tabs?.chart || "Chart",
-              comments: t.launchpad?.tokenDetail?.tabs?.comments || "Comments",
               trades: t.launchpad?.tokenDetail?.tabs?.trades || "Trades",
               holders: t.launchpad?.tokenDetail?.tabs?.holders || "Holders",
             };
@@ -933,21 +938,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
         </div>
 
         {/* Comments Section */}
-        {/* <div
-          ref={commentsRef}
-          id="comments-section"
-          className="flex flex-col gap-4 p-7"
-          style={{ borderBottom: `0.2px solid ${colors["Neutral/400"]}` }}
-        >
-          <span style={{ ...typography["P1/Semibold"], color: colors["Neutral/50"] }}>
-            Comments
-          </span>
-          <div className="flex items-center justify-center" style={{ minHeight: "100px" }}>
-            <span style={{ ...typography["P2/Regular"], color: colors["Neutral/200"] }}>
-              No comments yet
-            </span>
-          </div>
-        </div> */}
 
         {/* Trades Section */}
         <div
@@ -1121,9 +1111,12 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                     {formatTokenAmount(parseFloat(holder.tokenAmount || '0'))}
                   </span>
                   <span style={{ width: "144px", ...typography["P2/Regular"], color: colors["Neutral/200"] }}>
-                    {parseFloat(holder.valueUsd || '0') < 0.01
-                      ? parseFloat(holder.valueUsd || '0').toFixed(6)
-                      : parseFloat(holder.valueUsd || '0').toFixed(4)}
+                    {currentPriceSol > 0
+                      ? (() => {
+                          const value = (Number(holder.tokenAmount) || 0) * currentPriceSol;
+                          return value < 0.01 ? value.toFixed(6) : value.toFixed(4);
+                        })()
+                      : "—"}
                   </span>
                 </div>
               ))}
@@ -1148,7 +1141,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
               <div
                 className="w-7 h-7 rounded-full bg-cover bg-center"
                 style={{
-                  backgroundImage: `url(${project.imageUrl || '/figma-assets/token-detail/token-placeholder.png'})`,
+                  backgroundImage: cssUrl(project.imageUrl || '/figma-assets/token-detail/token-placeholder.png'),
                 }}
               />
               <div className="flex items-center gap-1.5">
@@ -1159,17 +1152,6 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                   {project.ticker}
                 </span>
               </div>
-              <div
-                className="flex justify-center items-center gap-1.5 rounded-full"
-                style={{
-                  padding: "4px 12px",
-                  backgroundColor: colors["Neutral/500"],
-                }}
-              >
-                <span style={{ ...typography["Caption/Medium"], color: colors["Neutral/200"] }}>
-                  #47
-                </span>
-              </div>
             </div>
 
             {/* Price & Change */}
@@ -1177,6 +1159,11 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
               <span style={{ ...typography["H2/Semibold"], color: colors["White"] }}>
                 {formatPrice(project.currentPrice || project.price || 0)}
               </span>
+              {isRefreshing && (
+                <span className="animate-pulse" style={{ ...typography["Caption/Regular"], color: colors["Neutral/200"] }}>
+                  updating…
+                </span>
+              )}
               <div className="flex justify-center items-center gap-0.5">
                 <img
                   src="/figma-assets/token-detail/price-down-arrow.svg"
@@ -1242,7 +1229,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
               }}
             >
               {[
-                { label: "5M", value: project.priceChange5m, selected: true },
+                { label: "5M", value: project.priceChange5m, selected: false },
                 { label: "1H", value: project.priceChange1h, selected: false },
                 { label: "6H", value: project.priceChange6h, selected: false },
                 { label: "24H", value: project.priceChange24h, selected: false },
@@ -1386,7 +1373,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
               }}
             >
               <button
-                onClick={() => setTradeMode("buy")}
+                onClick={() => switchMode("buy")}
                 className="flex-1 flex justify-center items-center gap-1.5 cursor-pointer"
                 style={{
                   padding: "12px 16px",
@@ -1402,7 +1389,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                 <span style={{ ...typography["P2/Medium"], color: colors["White"] }}>{t.launchpad?.tokenDetail?.trading?.buy || "Buy"}</span>
               </button>
               <button
-                onClick={() => setTradeMode("sell")}
+                onClick={() => switchMode("sell")}
                 className="flex-1 flex justify-center items-center gap-1.5 cursor-pointer"
                 style={{
                   padding: "12px 16px",
@@ -1453,11 +1440,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                           inputMode="decimal"
                           value={tokenAmount}
                           onChange={(e) => {
-                            const value = e.target.value;
-                            // Allow only numbers and decimal point
-                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                              setTokenAmount(value);
-                            }
+                            if (isAmountInput(e.target.value)) setTokenAmount(e.target.value);
                           }}
                           placeholder={tradeMode === "buy" ? (t.launchpad?.tokenDetail?.trading?.enterSolAmount || "Enter SOL amount") : (t.launchpad?.tokenDetail?.trading?.enterTokenAmount?.replace('{{ticker}}', project.ticker) || `Enter ${project.ticker} amount`)}
                           className="bg-transparent outline-none flex-1"
@@ -1474,17 +1457,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                       {[25, 50, 75, 100].map((percent) => (
                         <button
                           key={percent}
-                          onClick={() => {
-                            if (tradeMode === "buy") {
-                              // For buy mode, calculate percentage of SOL balance
-                              const amount = (walletBalance * percent) / 100;
-                              setTokenAmount(amount.toFixed(6));
-                            } else {
-                              // For sell mode, calculate percentage of token balance
-                              const amount = (userTokenBalance * percent) / 100;
-                              setTokenAmount(amount.toFixed(0));
-                            }
-                          }}
+                          onClick={() => setPercent(percent)}
                           className="flex-1 py-1.5 rounded-lg text-center cursor-pointer hover:opacity-80 transition-opacity"
                           style={{
                             backgroundColor: colors["Neutral/500"],
@@ -1511,9 +1484,9 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                       <span
                         style={{ ...typography["Caption/Medium"], color: colors["Primary/Main"] }}
                       >
-                        {t.launchpad?.tokenDetail?.trading?.balance || "Balance"}: {tradeMode === "buy"
-                          ? `${walletBalance.toFixed(4)} SOL`
-                          : `${userTokenBalance.toLocaleString()} ${project.ticker}`
+                        {t.launchpad?.tokenDetail?.trading?.balance || "Balance"}: {isBuy
+                          ? walletBalance === null ? "unavailable" : `${floorToDecimals(walletBalance, 4)} SOL`
+                          : userTokenBalance === null ? "unavailable" : `${userTokenBalance.toLocaleString()} ${project.ticker}`
                         }
                       </span>
                     </div>
@@ -1554,11 +1527,11 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                   </div>
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-1">
-                      <span style={{ ...typography["P2/Regular"], color: colors["Neutral/100"] }}>{t.launchpad?.tokenDetail?.trading?.fee || "Fee (1%)"}</span>
+                      <span style={{ ...typography["P2/Regular"], color: colors["Neutral/100"] }}>{t.launchpad?.tokenDetail?.trading?.fee || "Fee"}</span>
                       <img src="/figma-assets/token-detail/info-icon.svg" alt="" className="w-3.5 h-3.5" />
                     </div>
                     <span style={{ ...typography["P2/Regular"], color: colors["Neutral/200"] }}>
-                      {isGettingQuote ? "..." : quote?.fee ? `${quote.fee.toFixed(6)} SOL` : "0 SOL"}
+                      {isGettingQuote ? "..." : quote && Number.isFinite(quote.fee) ? `${quote.fee.toFixed(6)} SOL` : "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
@@ -1566,19 +1539,60 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
                       {tradeMode === "buy" ? (t.launchpad?.tokenDetail?.trading?.youReceive || "You receive") : (t.launchpad?.tokenDetail?.trading?.youGet || "You get")}
                     </span>
                     <span style={{ ...typography["P1/Regular"], color: colors["White"] }}>
-                      {isGettingQuote ? "..." : tradeMode === "buy"
-                        ? `${Number(quote?.outputAmount || 0).toLocaleString()} ${project.ticker}`
-                        : `${Number(quote?.outputAmount || 0).toFixed(6)} SOL`
+                      {isGettingQuote && !quote ? "..." : !quote ? "—" : isBuy
+                        ? `${quote.outputAmount.toLocaleString()} ${project.ticker}`
+                        : `${quote.outputAmount.toFixed(6)} SOL`
                       }
                     </span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span style={{ ...typography["P2/Regular"], color: colors["Neutral/100"] }}>Price impact</span>
+                    <span style={{ ...typography["P2/Regular"], color: quote && quote.priceImpact > 5 ? colors["Danger"] : colors["Neutral/200"] }}>
+                      {quote && Number.isFinite(quote.priceImpact) ? `${quote.priceImpact.toFixed(2)}%` : "—"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span style={{ ...typography["P2/Regular"], color: colors["Neutral/100"] }}>Max slippage</span>
+                    <div className="flex items-center gap-1.5">
+                      {SLIPPAGE_OPTIONS.map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setSlippage(value)}
+                          className="rounded-md px-2 py-0.5 cursor-pointer"
+                          style={{
+                            ...typography["Caption/Medium"],
+                            border: `0.5px solid ${slippage === value ? colors["Primary/Main"] : colors["Neutral/400"]}`,
+                            color: slippage === value ? colors["Primary/Main"] : colors["Neutral/100"],
+                          }}
+                        >
+                          {value}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {quote && (
+                    <div className="flex justify-between items-center">
+                      <span style={{ ...typography["Caption/Regular"], color: colors["Neutral/200"] }}>Minimum received</span>
+                      <span style={{ ...typography["Caption/Regular"], color: colors["Neutral/200"] }}>
+                        {isBuy
+                          ? `${(quote.outputAmount * (1 - slippage / 100)).toLocaleString()} ${project.ticker}`
+                          : `${(quote.outputAmount * (1 - slippage / 100)).toFixed(6)} SOL`}
+                      </span>
+                    </div>
+                  )}
+                  {isMigrated && (
+                    <p style={{ ...typography["Caption/Regular"], color: colors["Danger"] }}>
+                      This token has graduated from the bonding curve and can no longer be traded here.
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* Buy/Sell Button */}
               <button
                 onClick={handleTrade}
-                disabled={isTrading || !tokenAmount || parseFloat(tokenAmount) <= 0}
+                disabled={isTrading || isMigrated || !parsedInput.ok || !quote || isGettingQuote && !quote}
                 className="flex justify-center items-center w-full rounded-full cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   padding: "14px 32px",
@@ -1600,14 +1614,25 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
           </div>
 
           {/* Socials Section */}
-          <div className="flex justify-between items-center">
-            <span style={{ ...typography["P2/Medium"], color: colors["Neutral/200"] }}>{t.launchpad?.tokenDetail?.stats?.socials || "Socials"}</span>
-            <img
-              src="/figma-assets/token-detail/socials-icons.svg"
-              alt="Social links"
-              className="h-[30px] cursor-pointer hover:opacity-80 transition-opacity"
-            />
-          </div>
+          {socialLinks.length > 0 && (
+            <div className="flex justify-between items-center">
+              <span style={{ ...typography["P2/Medium"], color: colors["Neutral/200"] }}>{t.launchpad?.tokenDetail?.stats?.socials || "Socials"}</span>
+              <div className="flex items-center gap-3">
+                {socialLinks.map((link) => (
+                  <a
+                    key={link.label}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                    className="hover:opacity-80 transition-opacity"
+                    style={{ ...typography["Caption/Medium"], color: colors["Primary/Main"] }}
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Token Holdings */}
           <div
@@ -1619,19 +1644,44 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
             }}
           >
             <div className="flex justify-between items-center" style={{ padding: "0px 16px" }}>
-              <span style={{ ...typography["P2/Medium"], color: colors["Neutral/200"] }}>{project.name}</span>
-              <span style={{ ...typography["P2/Medium"], color: colors["White"] }}>1</span>
+              <span style={{ ...typography["P2/Medium"], color: colors["Neutral/200"] }}>Your {project.ticker}</span>
+              <span style={{ ...typography["P2/Medium"], color: colors["White"] }}>
+                {userTokenBalance === null ? "—" : userTokenBalance.toLocaleString()}
+              </span>
             </div>
             <div className="w-full h-px" style={{ backgroundColor: colors["Neutral/400"] }} />
             <div className="flex justify-between items-center" style={{ padding: "0px 16px" }}>
-              <span style={{ ...typography["P2/Medium"], color: colors["Neutral/200"] }}>SOL</span>
+              <span style={{ ...typography["P2/Medium"], color: colors["Neutral/200"] }}>Value (SOL)</span>
               <span style={{ ...typography["P2/Medium"], color: colors["White"] }}>
-                {project.currentPrice ? parseFloat(String(project.currentPrice)).toFixed(10) : "0.0000000000"}
+                {userTokenBalance === null || !currentPriceSol ? "—" : `${(userTokenBalance * currentPriceSol).toFixed(6)} SOL`}
               </span>
             </div>
           </div>
         </div>
       </div>
+
+      <PinConfirmModal
+        isOpen={pendingTrade !== null}
+        title={pendingTrade?.mode === "sell" ? `Confirm sell` : `Confirm buy`}
+        confirmLabel={pendingTrade?.mode === "sell" ? "Sell" : "Buy"}
+        summary={
+          pendingTrade
+            ? [
+                { label: pendingTrade.mode === "buy" ? "You pay" : "You sell", value: `${pendingTrade.amountText} ${pendingTrade.mode === "buy" ? "SOL" : project.ticker}` },
+                {
+                  label: "Minimum received",
+                  value: pendingTrade.mode === "buy"
+                    ? `${pendingTrade.minimumOutput.toLocaleString()} ${project.ticker}`
+                    : `${pendingTrade.minimumOutput.toFixed(6)} SOL`,
+                },
+                { label: "Max slippage", value: `${pendingTrade.slippage}%` },
+                { label: "Price impact", value: Number.isFinite(pendingTrade.priceImpact) ? `${pendingTrade.priceImpact.toFixed(2)}%` : "—" },
+              ]
+            : []
+        }
+        onCancel={() => setPendingTrade(null)}
+        onConfirmed={executeTrade}
+      />
 
       {/* Toast Notification */}
         {showToast && (tradeSuccess || tradeError) && (

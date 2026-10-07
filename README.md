@@ -8,8 +8,9 @@ SwarpPay and SwarpLaunch front-ends, split out of
 | --- | --- | --- |
 | `apps/foundation-dashboard` | Next.js 16, React 19, Redux, `@solana/web3.js` | Custodial Solana wallet, swap, SwarpLaunch launchpad. Target: `app.swarppay.com` |
 | `apps/foundation-admin` | Vite, React 19, Refine | Admin console: users, wallets, transactions, launchpad projects |
+| `apps/preview-api` | Next.js route handlers | **Preview only.** Answers the dashboard's API calls with sample data so the UI can be shown without the real backend. Cannot move funds. |
 
-The backend API both apps call is **not** in this repository.
+The real backend API both apps call is **not** in this repository.
 
 ## Run
 
@@ -20,9 +21,9 @@ npm ci
 npm run dev
 ```
 
-Dashboard variables: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_MOONPAY_PUBLISHABLE_KEY`,
-`NEXT_PUBLIC_SOLANA_NETWORK`, `NEXT_PUBLIC_SWARP_TOKEN_MINT`.
-Admin variables: `VITE_ADMIN_API_URL`, `VITE_ADMIN_API_BASE_PATH`.
+Each app's README lists its variables. Production builds fail when the API URL
+is missing: `NEXT_PUBLIC_API_URL` + `NEXT_PUBLIC_SOLANA_NETWORK` (dashboard),
+`VITE_ADMIN_API_URL` (admin).
 
 ## Deploy
 
@@ -30,11 +31,21 @@ Each app is its own deployment (`apps/<name>` as the root directory; `amplify.ym
 is included for AWS Amplify, Vercel also works). Point `app.swarppay.com` at the
 dashboard and allow that origin in the backend CORS settings.
 
-## Known issues to fix before public launch
+## Team preview (no backend)
 
-- No PIN check on send, swap or launchpad trades.
-- Session tokens kept in `localStorage`; no content security policy.
-- One-time code can be returned in an API response.
-- Devnet / MoonPay sandbox defaults mixed with production settings; dead
-  private-key code in `balanceSync.ts`.
-- No tests.
+To show the dashboard and launchpad before the backend is available, deploy
+`apps/preview-api` and point a dashboard build at it. Step-by-step Vercel setup:
+[`docs/DEPLOY_PREVIEW.md`](docs/DEPLOY_PREVIEW.md).
+
+## Status
+
+The audit in [`docs/AUDIT.md`](docs/AUDIT.md) has been worked through in both
+apps (see its status section). The remaining risk is server-side: the
+protections the front-ends now rely on must be enforced by the backend, listed
+in [`docs/BACKEND_REQUIREMENTS.md`](docs/BACKEND_REQUIREMENTS.md).
+
+## Checks
+
+CI (`.github/workflows/build.yml`) runs, for each app: type-check, lint, tests
+(dashboard, preview-api), `npm audit --omit=dev --audit-level=high`, and a
+production build.

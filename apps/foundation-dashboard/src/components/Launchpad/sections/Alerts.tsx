@@ -4,22 +4,41 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import CreateAlertModal from "../CreateAlertModal";
 import { apiService, LaunchpadAlert } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
+import { errorMessage } from '@/lib/http';
 
-// Format price for display
+// Significant-digit formatting so tiny bonding-curve prices (e.g. 0.00001 or 5e-8) stay readable.
+const formatSignificant = (value: number, minFractionDigits: number): string => {
+  if (value >= 1) {
+    return value.toLocaleString("en-US", { minimumFractionDigits: minFractionDigits, maximumFractionDigits: 4 });
+  }
+  const rounded = Number(value.toPrecision(4));
+  return value < 0.0001 ? rounded.toExponential() : String(rounded);
+};
+
+// Format an alert price in the alert's own currency.
 const formatPrice = (price: string | number, currency: string): string => {
   const priceNum = typeof price === "string" ? parseFloat(price) : price;
-  if (currency === "SOL") {
-    return `${priceNum.toFixed(10)} SOL`;
-  }
-  return `$${priceNum.toFixed(2)}`;
+  const unit = (currency || "SOL").toUpperCase();
+  if (!Number.isFinite(priceNum)) return String(price);
+  if (unit === "USD") return priceNum <= 0 ? "$0" : `$${formatSignificant(priceNum, 2)}`;
+  return priceNum <= 0 ? `0 ${unit}` : `${formatSignificant(priceNum, 0)} ${unit}`;
 };
+
+interface StatusStyle {
+  label: string;
+  color: string;
+}
 
 export default function Alerts() {
   const t = useT();
 
   const [alerts, setAlerts] = useState<LaunchpadAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [_error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState<LaunchpadAlert | null>(null);
   const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
@@ -66,7 +85,7 @@ export default function Alerts() {
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) {
         setError(t.launchpad?.alerts?.loginRequired || "Please login to view your alerts");
         setIsLoading(false);
@@ -76,12 +95,28 @@ export default function Alerts() {
       const response = await apiService.getLaunchpadAlerts(token);
       setAlerts(response.alerts || []);
     } catch (err) {
-      console.error("Failed to fetch alerts:", err);
-      setError(t.launchpad?.alerts?.failedToLoad || "Failed to load alerts");
+      setError(errorMessage(err, t.launchpad?.alerts?.failedToLoad || "Failed to load alerts"));
     } finally {
       setIsLoading(false);
     }
   }, [t]);
+
+  const getStatusStyle = (status: string | undefined): StatusStyle => {
+    const normalized = (status || "").trim().toLowerCase();
+    switch (normalized) {
+      case "active":
+        return { label: t.launchpad?.alerts?.active || "Active", color: "#40E0D0" };
+      case "triggered":
+        return { label: "Triggered", color: "#F2C94C" };
+      case "expired":
+        return { label: "Expired", color: "#636466" };
+      case "cancelled":
+      case "canceled":
+        return { label: "Cancelled", color: "#636466" };
+      default:
+        return { label: status || "Unknown", color: "#B3B5B6" };
+    }
+  };
 
   // Initial fetch
   useEffect(() => {
@@ -93,6 +128,7 @@ export default function Alerts() {
     const handleClickOutside = (event: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
         setOpenPopoverId(null);
+        setConfirmDeleteId(null);
       }
     };
 
@@ -111,16 +147,25 @@ export default function Alerts() {
     setOpenPopoverId(null);
   };
 
-  const handleDeleteAlert = async (alertId: string) => {
-    try {
-      const token = localStorage.getItem("swarp_fd_access_token");
-      if (!token) return;
+  const handleDeleteAlert = async (alert: LaunchpadAlert) => {
+    if (deletingId) return;
+    const token = getAccessToken();
+    if (!token) {
+      setActionError(t.launchpad?.alerts?.loginRequired || "Please login to manage your alerts");
+      return;
+    }
 
-      await apiService.deleteLaunchpadAlert(alertId, token);
-      setAlerts(alerts.filter(a => a.id !== alertId));
+    setDeletingId(alert.id);
+    setActionError(null);
+    try {
+      await apiService.deleteLaunchpadAlert(alert.id, token);
+      setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
       setOpenPopoverId(null);
+      setConfirmDeleteId(null);
     } catch (err) {
-      console.error("Failed to delete alert:", err);
+      setActionError(`Could not delete the alert for ${alert.projectName}: ${errorMessage(err, "Request failed")}`);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -136,6 +181,7 @@ export default function Alerts() {
   // Toggle popover
   const togglePopover = (alertId: string) => {
     setOpenPopoverId(openPopoverId === alertId ? null : alertId);
+    setConfirmDeleteId(null);
   };
 
   return (
@@ -238,9 +284,62 @@ export default function Alerts() {
         </div>
       )}
 
+      {/* Error State (load failure or not logged in) */}
+      {!isLoading && error && (
+        <div className="flex flex-col items-center justify-center !py-16 !gap-4">
+          <span
+            role="alert"
+            style={{
+              fontFamily: "'Inter Variable', Inter, sans-serif",
+              fontSize: "14px",
+              fontWeight: 400,
+              lineHeight: "1.4em",
+              color: "#EB5757",
+            }}
+          >
+            {error}
+          </span>
+          <button
+            type="button"
+            onClick={fetchAlerts}
+            className="cursor-pointer !px-4 !py-2 bg-[#40E0D0] text-[#090A11] rounded-full text-sm font-medium hover:bg-[#40E0D0]/90"
+          >
+            {t.launchpad?.watchlist?.tryAgain || "Try again"}
+          </button>
+        </div>
+      )}
+
       {/* Alerts List */}
-      {!isLoading && alerts.length > 0 && (
+      {!isLoading && !error && alerts.length > 0 && (
         <div className="!px-7 !py-7">
+          {/* Action Error */}
+          {actionError && (
+            <div
+              role="alert"
+              className="flex items-start justify-between !gap-3 !px-4 !py-3 !mb-3 rounded-lg"
+              style={{ backgroundColor: "rgba(235, 87, 87, 0.1)" }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Inter Variable', Inter, sans-serif",
+                  fontSize: "14px",
+                  fontWeight: 400,
+                  lineHeight: "1.4em",
+                  color: "#EB5757",
+                }}
+              >
+                {actionError}
+              </span>
+              <button
+                type="button"
+                onClick={() => setActionError(null)}
+                aria-label="Dismiss"
+                className="cursor-pointer text-[#EB5757] hover:opacity-70"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <div
             className="flex flex-col !p-5 !gap-4"
             style={{
@@ -248,7 +347,9 @@ export default function Alerts() {
               borderRadius: "12px",
             }}
           >
-            {alerts.map((alert) => (
+            {alerts.map((alert) => {
+              const statusStyle = getStatusStyle(alert.status);
+              return (
               <div key={alert.id} className="flex flex-col">
                 {/* Alert Card Top Section */}
                 <div
@@ -259,9 +360,9 @@ export default function Alerts() {
                   <div className="flex flex-col !gap-2.5">
                     {/* Status Badge */}
                     <div className="flex items-center !gap-1">
-                      {/* Active Icon */}
+                      {/* Status Icon */}
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <circle cx="8" cy="8" r="3" fill="#40E0D0" />
+                        <circle cx="8" cy="8" r="3" fill={statusStyle.color} />
                       </svg>
                       <span
                         style={{
@@ -270,10 +371,10 @@ export default function Alerts() {
                           fontWeight: 700,
                           lineHeight: "1.4em",
                           letterSpacing: "-0.3px",
-                          color: "#40E0D0",
+                          color: statusStyle.color,
                         }}
                       >
-                        {t.launchpad?.alerts?.active || "Active"}
+                        {statusStyle.label}
                       </span>
                     </div>
 
@@ -398,9 +499,47 @@ export default function Alerts() {
                           </span>
                         </button>
 
-                        {/* Delete Option */}
+                        {/* Delete Option (asks for confirmation first) */}
+                        {confirmDeleteId === alert.id ? (
+                          <div
+                            className="flex flex-col !gap-2 !px-4 !py-2"
+                            style={{ backgroundColor: "rgba(235, 87, 87, 0.1)", borderRadius: "0 0 7px 7px" }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: "'Inter Variable', Inter, sans-serif",
+                                fontSize: "14px",
+                                fontWeight: 400,
+                                lineHeight: "1.4em",
+                                letterSpacing: "-0.3px",
+                                color: "#EB5757",
+                              }}
+                            >
+                              Delete this alert?
+                            </span>
+                            <div className="flex !gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAlert(alert)}
+                                disabled={deletingId === alert.id}
+                                className="cursor-pointer !px-3 !py-1 rounded-full text-sm font-medium bg-[#EB5757] text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {deletingId === alert.id ? "Deleting…" : "Yes"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                                disabled={deletingId === alert.id}
+                                className="cursor-pointer !px-3 !py-1 rounded-full text-sm font-medium bg-[#2B2D30] text-white hover:bg-[#3B3D40] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                No
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
                         <button
-                          onClick={() => handleDeleteAlert(alert.id)}
+                          type="button"
+                          onClick={() => setConfirmDeleteId(alert.id)}
                           className="flex items-center !gap-2 !px-4 !py-2 hover:bg-[#131519] transition-colors"
                           style={{ backgroundColor: "rgba(235, 87, 87, 0.1)", borderRadius: "0 0 7px 7px" }}
                         >
@@ -454,6 +593,7 @@ export default function Alerts() {
                             {t.launchpad?.alerts?.delete || "Delete"}
                           </span>
                         </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -488,13 +628,14 @@ export default function Alerts() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Empty State */}
-      {!isLoading && alerts.length === 0 && (
+      {!isLoading && !error && alerts.length === 0 && (
         <div className="flex flex-col items-center justify-center !py-16 !gap-4">
           <span
             style={{

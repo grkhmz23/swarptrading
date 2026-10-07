@@ -1,18 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { apiService } from "@/services/api";
+import { apiService, LaunchpadProject } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
-
-// Project type from API
-interface Project {
-  id: string;
-  name: string;
-  ticker: string;
-  imageUrl?: string;
-  status: string;
-  isWatching?: boolean;
-}
+import { getAccessToken } from '@/lib/session';
+import { errorMessage } from '@/lib/http';
 
 interface AddAssetModalProps {
   isOpen: boolean;
@@ -21,65 +13,77 @@ interface AddAssetModalProps {
 }
 
 export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModalProps) {
+  if (!isOpen) return null;
+  // Mounted fresh on every open so selection, errors and the watchlist snapshot never leak between sessions.
+  return <AddAssetModalContent onClose={onClose} onSave={onSave} />;
+}
+
+function AddAssetModalContent({ onClose, onSave }: Omit<AddAssetModalProps, "isOpen">) {
   const t = useT();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
-  const [liveProjects, setLiveProjects] = useState<Project[]>([]);
-  const [watchedProjectIds, setWatchedProjectIds] = useState<Set<string>>(new Set());
-  const [isLoading, setIsLoading] = useState(false);
+  const [liveProjects, setLiveProjects] = useState<LaunchpadProject[]>([]);
+  // null = the current watchlist is unknown. Saving is disabled until it is known,
+  // because the API only offers a toggle and toggling blind could remove watched projects.
+  const [watchedProjectIds, setWatchedProjectIds] = useState<Set<string> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const fetchWatchedIds = useCallback(async (token: string): Promise<Set<string>> => {
+    const response = await apiService.getLaunchpadWatchlist(token);
+    return new Set((response.projects || []).map((p) => p.id));
+  }, []);
+
+  const loadData = useCallback(async () => {
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
-
-      // Fetch live projects (status = bonding)
-      const projectsResponse = await apiService.getLaunchpadProjects({ status: "bonding", limit: 50 });
-      setLiveProjects(projectsResponse.projects || []);
-
-      if (token) {
-        try {
-          const watchlistResponse = await apiService.getLaunchpadWatchlist(token);
-          const watchedIds = new Set((watchlistResponse.projects || []).map((p: Project) => p.id));
-          setWatchedProjectIds(watchedIds);
-        } catch {
-          // User may not be logged in, continue without watchlist
-          setWatchedProjectIds(new Set());
-        }
+      const token = getAccessToken();
+      if (!token) {
+        setWatchedProjectIds(null);
+        setLoadError(t.launchpad?.watchlist?.loginRequired || "Please login to add to watchlist");
+        return;
       }
+      const [projectsResponse, watchedIds] = await Promise.all([
+        apiService.getLaunchpadProjects({ status: "bonding", limit: 50 }),
+        fetchWatchedIds(token),
+      ]);
+      setLiveProjects(projectsResponse.projects || []);
+      setWatchedProjectIds(watchedIds);
+      setLoadError(null);
     } catch (err) {
-      console.error("Failed to fetch projects:", err);
-      setError(t.launchpad?.watchlist?.failedToLoad || "Failed to load projects");
+      setWatchedProjectIds(null);
+      setLoadError(errorMessage(err, t.launchpad?.watchlist?.failedToLoad || "Failed to load your watchlist"));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [t, fetchWatchedIds]);
 
-  // Fetch data when modal opens
   useEffect(() => {
-    if (isOpen) {
-      fetchData();
-      // Reset selection when modal opens
-      setSelectedProjects(new Set());
-      setSearchQuery("");
-    }
-  }, [isOpen, fetchData]);
+    void loadData();
+  }, [loadData]);
 
-  if (!isOpen) return null;
+  const handleRetry = () => {
+    setIsLoading(true);
+    setLoadError(null);
+    void loadData();
+  };
 
-  // Filter projects based on search (exclude already watched)
-  const filteredProjects = liveProjects.filter(
-    (project) =>
-      !watchedProjectIds.has(project.id) &&
-      (project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-       project.ticker.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  // Projects that are confirmed not to be on the watchlist (empty while the watchlist is unknown).
+  const query = searchQuery.toLowerCase();
+  const filteredProjects = watchedProjectIds
+    ? liveProjects.filter(
+        (project) =>
+          !watchedProjectIds.has(project.id) &&
+          (project.name.toLowerCase().includes(query) || project.ticker.toLowerCase().includes(query))
+      )
+    : [];
+
+  const canSave = watchedProjectIds !== null && selectedProjects.size > 0 && !isSaving && !isLoading;
 
   // Toggle project selection
   const toggleProject = (projectId: string) => {
+    if (isSaving) return;
     const newSelected = new Set(selectedProjects);
     if (newSelected.has(projectId)) {
       newSelected.delete(projectId);
@@ -89,41 +93,95 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
     setSelectedProjects(newSelected);
   };
 
+  const projectLabel = (projectId: string) => {
+    const project = liveProjects.find((p) => p.id === projectId);
+    return project ? project.ticker || project.name : projectId;
+  };
+
   const handleSave = async () => {
-    const token = localStorage.getItem("swarp_fd_access_token");
+    if (!canSave) return;
 
+    const token = getAccessToken();
     if (!token) {
-      setError(t.launchpad?.watchlist?.loginRequired || "Please login to add to watchlist");
-      return;
-    }
-
-    if (selectedProjects.size === 0) {
+      setSaveError(t.launchpad?.watchlist?.loginRequired || "Please login to add to watchlist");
       return;
     }
 
     setIsSaving(true);
-    setError(null);
+    setSaveError(null);
+
+    const added: string[] = [];
+    let failure: { projectId: string; message: string } | null = null;
+    let current: Set<string> | null = null;
+
     try {
-      // Add each selected project to watchlist
-      const projectIds = Array.from(selectedProjects);
-      for (const projectId of projectIds) {
-        await apiService.toggleLaunchpadWatchlist(projectId, token);
+      // Confirm the current watchlist right before toggling, so nothing already watched is toggled off.
+      try {
+        current = await fetchWatchedIds(token);
+      } catch (err) {
+        setSaveError(errorMessage(err, t.launchpad?.watchlist?.failedToLoad || "Could not confirm your current watchlist. Nothing was changed."));
+        return;
       }
 
-      // Call onSave callback to refresh parent
-      onSave?.();
-      onClose();
-    } catch (err) {
-      console.error("Failed to add to watchlist:", err);
-      setError(t.launchpad?.watchlist?.failedToAdd || "Failed to add projects to watchlist. Please try again.");
+      const toAdd = Array.from(selectedProjects).filter((id) => !current?.has(id));
+
+      for (const projectId of toAdd) {
+        try {
+          let result = await apiService.toggleLaunchpadWatchlist(projectId, token);
+          if (!result.isWatching) {
+            // The project was added elsewhere after our check, so this toggle removed it. Restore it.
+            result = await apiService.toggleLaunchpadWatchlist(projectId, token);
+          }
+          if (!result.isWatching) {
+            failure = { projectId, message: "The server did not confirm the project was added." };
+            break;
+          }
+          added.push(projectId);
+        } catch (err) {
+          failure = { projectId, message: errorMessage(err, t.launchpad?.watchlist?.failedToAdd || "Failed to add to watchlist") };
+          break;
+        }
+      }
+
+      if (!failure) {
+        onSave?.();
+        onClose();
+        return;
+      }
+
+      if (added.length > 0) onSave?.();
+
+      const succeeded = added.length > 0 ? ` Added: ${added.map(projectLabel).join(", ")}.` : "";
+      const reason = failure.message.replace(/\.+$/, "");
+      setSaveError(`Could not add ${projectLabel(failure.projectId)}: ${reason}.${succeeded} Remaining selections were not changed.`);
+      // Drop what is now on the watchlist from the selection so a retry only toggles what is still missing.
+      setSelectedProjects((prev) => {
+        const next = new Set(prev);
+        for (const id of added) next.delete(id);
+        if (current) for (const id of current) next.delete(id);
+        return next;
+      });
+
+      // Re-read the watchlist so the list reflects the server, not our assumptions.
+      try {
+        setWatchedProjectIds(await fetchWatchedIds(token));
+      } catch (err) {
+        setWatchedProjectIds(null);
+        setLoadError(errorMessage(err, t.launchpad?.watchlist?.failedToLoad || "Failed to load your watchlist"));
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
+
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -152,8 +210,11 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
         >
           {/* Close Button */}
           <button
-            onClick={onClose}
-            className="flex cursor-pointer  items-center justify-center w-8 h-8 rounded-full hover:bg-[#2B2D30] transition-colors"
+            type="button"
+            onClick={handleClose}
+            disabled={isSaving}
+            aria-label="Close"
+            className="flex cursor-pointer  items-center justify-center w-8 h-8 rounded-full hover:bg-[#2B2D30] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path
@@ -255,7 +316,7 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
           )}
 
           {/* Error State */}
-          {error && !isLoading && (
+          {loadError && !isLoading && (
             <div className="flex flex-col items-center justify-center !py-12">
               <span
                 style={{
@@ -265,10 +326,11 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
                   color: "#EB5757",
                 }}
               >
-                {error}
+                {loadError}
               </span>
               <button
-                onClick={fetchData}
+                type="button"
+                onClick={handleRetry}
                 className="!mt-3 !px-4 !py-2 bg-[#2B2D30] rounded-full text-sm text-white hover:bg-[#3B3D40]"
               >
                 {t.launchpad?.watchlist?.tryAgain || "Try Again"}
@@ -277,7 +339,7 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
           )}
 
           {/* Project List */}
-          {!isLoading && !error && (
+          {!isLoading && !loadError && (
             <div className="flex flex-col">
               {filteredProjects.map((project) => {
                 const isSelected = selectedProjects.has(project.id);
@@ -285,7 +347,7 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
                   <div
                     key={project.id}
                     onClick={() => toggleProject(project.id)}
-                    className="flex items-center justify-between !px-4 !py-3 cursor-pointer hover:bg-[#1A1B23] rounded-lg transition-colors"
+                    className={`flex items-center justify-between !px-4 !py-3 hover:bg-[#1A1B23] rounded-lg transition-colors ${isSaving ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                   >
                     {/* Left - Token Info */}
                     <div className="flex items-center !gap-3">
@@ -376,13 +438,29 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
 
         {/* Save Button */}
         <div className="!px-6 !py-5">
+          {saveError && (
+            <div
+              role="alert"
+              className="!mb-3"
+              style={{
+                fontFamily: "'Inter Variable', Inter, sans-serif",
+                fontSize: "13px",
+                fontWeight: 400,
+                lineHeight: "1.4em",
+                color: "#EB5757",
+              }}
+            >
+              {saveError}
+            </div>
+          )}
           <button
+            type="button"
             onClick={handleSave}
-            disabled={selectedProjects.size === 0 || isSaving}
+            disabled={!canSave}
             className="w-full cursor-pointer  flex items-center justify-center !py-3.5 rounded-full transition-colors"
             style={{
-              backgroundColor: selectedProjects.size > 0 && !isSaving ? "#40E0D0" : "#2B2D30",
-              cursor: selectedProjects.size > 0 && !isSaving ? "pointer" : "not-allowed",
+              backgroundColor: canSave ? "#40E0D0" : "#2B2D30",
+              cursor: canSave ? "pointer" : "not-allowed",
             }}
           >
             {isSaving ? (
@@ -395,7 +473,7 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
                   fontWeight: 700,
                   lineHeight: "1.4em",
                   letterSpacing: "-0.3px",
-                  color: selectedProjects.size > 0 ? "#090A11" : "#636466",
+                  color: canSave ? "#090A11" : "#636466",
                 }}
               >
                 {t.launchpad?.watchlist?.save || "Save"} {selectedProjects.size > 0 ? `(${selectedProjects.size})` : ""}

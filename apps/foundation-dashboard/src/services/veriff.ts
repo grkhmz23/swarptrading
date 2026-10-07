@@ -1,21 +1,11 @@
-interface VeriffFrame {
-  close: () => void;
-}
-
-interface VeriffSDK {
-  createVeriffFrame: (config: {
-    url: string;
-    lang?: string;
-    onEvent?: (msg: string) => void;
-    onReload?: () => void;
-  }) => VeriffFrame;
-}
-
-declare global {
-  interface Window {
-    veriffSDK?: VeriffSDK;
-  }
-}
+/**
+ * Veriff identity verification.
+ *
+ * The InContext SDK is bundled from npm (`@veriff/incontext-sdk`) instead of
+ * being injected from cdn.veriff.me at runtime, so no third-party script runs
+ * on this origin. The SDK only renders an iframe pointing at the Veriff session
+ * URL returned by our backend.
+ */
 
 export interface VeriffSessionResponse {
   success: boolean;
@@ -30,95 +20,51 @@ export interface VeriffKycStatus {
   sessionUrl: string | null;
 }
 
+interface VeriffFrame {
+  close: () => void;
+}
+
+const VERIFF_HOST_PATTERN = /^https:\/\/([a-z0-9-]+\.)*veriff\.(me|com)(\/|$)/i;
+
+/** Only ever open session URLs that point at Veriff over HTTPS. */
+export function isVeriffSessionUrl(url: string): boolean {
+  return VERIFF_HOST_PATTERN.test(url);
+}
+
 class VeriffService {
-  private sdkLoaded = false;
-  private loadingPromise: Promise<void> | null = null;
   private currentFrame: VeriffFrame | null = null;
 
-  /**
-   * Load Veriff InContext SDK v2 dynamically
-   */
-  private async loadInContextSDK(): Promise<void> {
-    if (this.sdkLoaded) return;
-
-    if (this.loadingPromise) {
-      return this.loadingPromise;
-    }
-
-    this.loadingPromise = new Promise((resolve, reject) => {
-      if (typeof window !== 'undefined' && window.veriffSDK) {
-        this.sdkLoaded = true;
-        resolve();
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = 'https://cdn.veriff.me/incontext/js/v2.5.0/veriff.js';
-      script.async = true;
-      script.onload = () => {
-        if (window.veriffSDK) {
-          this.sdkLoaded = true;
-          resolve();
-        } else {
-          this.loadingPromise = null;
-          reject(new Error('Veriff SDK loaded but not available'));
-        }
-      };
-      script.onerror = () => {
-        this.loadingPromise = null;
-        reject(new Error('Failed to load Veriff SDK'));
-      };
-      document.head.appendChild(script);
-    });
-
-    return this.loadingPromise;
-  }
-
-  /**
-   * Open Veriff verification using InContext SDK (iframe modal) with fallbacks
-   */
   async openVerification(
     sessionUrl: string,
     options?: {
       onEvent?: (event: string) => void;
     },
   ): Promise<void> {
+    if (!isVeriffSessionUrl(sessionUrl)) {
+      throw new Error('Unexpected verification URL');
+    }
+
     try {
-      await this.loadInContextSDK();
+      const { createVeriffFrame } = await import('@veriff/incontext-sdk');
 
-      const sdk = window.veriffSDK;
-
-      if (sdk && sdk.createVeriffFrame) {
-        this.currentFrame = sdk.createVeriffFrame({
+      this.currentFrame?.close();
+      const open = (): VeriffFrame =>
+        createVeriffFrame({
           url: sessionUrl,
-          onEvent: (msg: string) => {
-            options?.onEvent?.(msg);
-          },
+          onEvent: (msg) => options?.onEvent?.(msg),
           onReload: () => {
-            // Safari iOS edge case - close and reopen with same session
-            if (this.currentFrame) {
-              this.currentFrame.close();
-            }
-            this.currentFrame = sdk.createVeriffFrame({
-              url: sessionUrl,
-              onEvent: (msg: string) => {
-                options?.onEvent?.(msg);
-              },
-            });
+            // Safari iOS asks for a reload; reopen the same session.
+            this.currentFrame?.close();
+            this.currentFrame = open();
           },
         });
-      } else {
-        this.openInNewWindow(sessionUrl, options);
-      }
-    } catch (error) {
-      console.error('Error loading Veriff InContext SDK, falling back to new window:', error);
+      this.currentFrame = open();
+    } catch {
       this.openInNewWindow(sessionUrl, options);
     }
   }
 
-  /**
-   * Fallback: open verification in a new window, or redirect if popup blocked
-   */
+  /** Fallback when the iframe cannot be created: open the session in a popup. */
   private openInNewWindow(
     sessionUrl: string,
     options?: {
@@ -132,23 +78,20 @@ class VeriffService {
     );
 
     if (!popup || popup.closed) {
-      // Popup was blocked - redirect in same window as last resort
-      window.location.href = sessionUrl;
+      // Popup blocked: navigate this window as a last resort.
+      window.location.assign(sessionUrl);
       return;
     }
 
-    // Monitor popup for closure
+    const startedAt = Date.now();
     const checkClosed = setInterval(() => {
       if (popup.closed) {
         clearInterval(checkClosed);
         options?.onEvent?.('FINISHED');
+      } else if (Date.now() - startedAt > 30 * 60 * 1000) {
+        clearInterval(checkClosed);
       }
     }, 1000);
-
-    // Auto-cleanup after 30 minutes
-    setTimeout(() => {
-      clearInterval(checkClosed);
-    }, 30 * 60 * 1000);
   }
 }
 

@@ -8,6 +8,7 @@ import { AppDispatch, RootState } from "@/store";
 import { fetchMilestones, claimReward, RewardResponse } from "@/store/slices/rewardSlice";
 import { fetchReferrals } from "@/store/slices/referralSlice";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 // Icon mapping for milestones
 const MILESTONE_ICONS: Record<string, string> = {
@@ -63,7 +64,7 @@ export default function RewardItem() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setAuthToken(localStorage.getItem("swarp_fd_access_token"));
+    setAuthToken(getAccessToken());
   }, []);
 
   useEffect(() => {

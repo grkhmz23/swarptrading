@@ -1,0 +1,31 @@
+{
+  "name": "preview-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sample-data stand-in for the SwarpPay backend, used only to preview the dashboard UI. Cannot move funds.",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "verify": "npm run type-check && npm run lint && npm run test"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19.2.14",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.8",
+    "typescript": "^5",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}

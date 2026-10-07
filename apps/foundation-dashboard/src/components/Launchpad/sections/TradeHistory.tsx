@@ -3,14 +3,19 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
+import { errorMessage } from '@/lib/http';
+import { explorerUrl } from '@/config/env';
 
 // Transaction type
 type TransactionType = "Buy" | "Sell";
-type TransactionStatus = "Completed" | "Pending" | "Failed";
+type TransactionStatus = "Completed" | "Pending" | "Failed" | "Unknown";
 
 interface Transaction {
   id: string;
   type: TransactionType;
+  projectId: string;
+  transactionHash?: string;
   tokenName: string;
   tokenTicker: string;
   tokenImage?: string;
@@ -21,13 +26,49 @@ interface Transaction {
   createdAt: string;
 }
 
+const PAGE_SIZE = 50;
+
+/** Map a backend trade status to a display status; unknown values are never shown as completed. */
+export function toDisplayStatus(status: string | undefined): TransactionStatus {
+  switch ((status ?? '').toLowerCase()) {
+    case 'completed':
+    case 'confirmed':
+    case 'success':
+    case 'succeeded':
+    case 'finalized':
+      return 'Completed';
+    case 'pending':
+    case 'processing':
+    case 'submitted':
+      return 'Pending';
+    case 'failed':
+    case 'reverted':
+    case 'error':
+    case 'cancelled':
+    case 'canceled':
+      return 'Failed';
+    default:
+      return 'Unknown';
+  }
+}
+
+const formatSol = (value: number): string => {
+  if (!Number.isFinite(value)) return '— SOL';
+  const abs = Math.abs(value);
+  if (abs === 0) return '0 SOL';
+  if (abs < 0.0001) return `${value.toExponential(2)} SOL`;
+  if (abs < 1) return `${value.toFixed(4)} SOL`;
+  return `${value.toFixed(2)} SOL`;
+};
+
 // API response type
 interface TradeHistoryItem {
   id: string;
-  type: 'buy' | 'sell';
+  type: 'buy' | 'sell' | 'BUY' | 'SELL';
   solAmount: string;
   tokenAmount: string;
   status?: string;
+  transactionHash?: string;
   createdAt: string;
   project?: {
     id: string;
@@ -61,6 +102,11 @@ export default function TradeHistory() {
   const [tokenFilter, setTokenFilter] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Filter dropdown options (use keys for filtering, display translations)
   const dateOptions = useMemo(() => [
@@ -101,6 +147,7 @@ export default function TradeHistory() {
       case 'Completed': return t.launchpad?.tradeHistory?.completed || status;
       case 'Pending': return t.launchpad?.tradeHistory?.pending || status;
       case 'Failed': return t.launchpad?.tradeHistory?.failed || status;
+      case 'Unknown': return 'Unknown';
       default: return status;
     }
   }, [t]);
@@ -116,48 +163,56 @@ export default function TradeHistory() {
   const tokenDropdownRef = useRef<HTMLDivElement>(null);
   const typeDropdownRef = useRef<HTMLDivElement>(null);
 
-  const fetchTradeHistory = useCallback(async () => {
-    setIsLoading(true);
+  /** Load one page; page 1 replaces the list, later pages append. */
+  const fetchTradeHistory = useCallback(async (pageToLoad: number) => {
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      setTransactions([]);
+      setLoadError("Sign in to see your trade history.");
+      setIsLoading(false);
+      return;
+    }
+    if (pageToLoad === 1) setIsLoading(true);
+    else setIsLoadingMore(true);
+    setLoadError(null);
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
-      if (!accessToken) {
-        setTransactions([]);
-        return;
-      }
-
-      const params: { page?: number; limit?: number; type?: 'buy' | 'sell' } = { limit: 50 };
+      const params: { page: number; limit: number; type?: 'buy' | 'sell' } = { page: pageToLoad, limit: PAGE_SIZE };
       if (typeFilter && typeFilter !== "All") {
         params.type = typeFilter.toLowerCase() as 'buy' | 'sell';
       }
 
       const response = await apiService.getLaunchpadUserTradeHistory(accessToken, params);
       const trades: TradeHistoryItem[] = response?.trades || [];
-
-      // Transform API response to Transaction format
       const transformed: Transaction[] = trades.map((trade) => ({
         id: trade.id,
-        type: trade.type === 'buy' ? 'Buy' : 'Sell',
+        type: String(trade.type).toLowerCase() === 'sell' ? 'Sell' : 'Buy',
+        projectId: trade.project?.id || '',
+        transactionHash: trade.transactionHash,
         tokenName: trade.project?.name || 'Unknown',
         tokenTicker: trade.project?.ticker || '???',
         tokenImage: trade.project?.imageUrl,
-        amount: formatTokenAmount(parseFloat(trade.tokenAmount) || 0),
-        solAmount: `${parseFloat(trade.solAmount).toFixed(2)} SOL`,
-        status: (trade.status === 'completed' ? 'Completed' : trade.status === 'pending' ? 'Pending' : 'Completed') as TransactionStatus,
+        amount: formatTokenAmount(Number(trade.tokenAmount) || 0),
+        solAmount: formatSol(Number(trade.solAmount)),
+        status: toDisplayStatus(trade.status),
         date: formatDate(trade.createdAt),
         createdAt: trade.createdAt,
       }));
 
-      setTransactions(transformed);
+      setTransactions((current) => (pageToLoad === 1 ? transformed : [...current, ...transformed]));
+      setPage(pageToLoad);
+      setTotal(Number(response?.total) || 0);
+      setTotalPages(Math.max(1, Number(response?.totalPages) || 1));
     } catch (error) {
-      console.error("Failed to fetch trade history:", error);
-      setTransactions([]);
+      if (pageToLoad === 1) setTransactions([]);
+      setLoadError(errorMessage(error, "Could not load your trade history."));
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, [typeFilter]);
 
   useEffect(() => {
-    fetchTradeHistory();
+    fetchTradeHistory(1);
   }, [fetchTradeHistory]);
 
   useEffect(() => {
@@ -182,10 +237,15 @@ export default function TradeHistory() {
     };
   }, [openDropdown]);
 
+  /** Token filter options keyed by project id (names are not unique). */
   const tokenOptions = useMemo(() => {
-    const uniqueTokens = [...new Set(transactions.map(t => t.tokenName))];
-    return ["All", ...uniqueTokens];
+    const byId = new Map<string, string>();
+    transactions.forEach((tx) => {
+      if (tx.projectId && !byId.has(tx.projectId)) byId.set(tx.projectId, `${tx.tokenName} (${tx.tokenTicker})`);
+    });
+    return [{ id: "All", label: "All" }, ...Array.from(byId, ([id, label]) => ({ id, label }))];
   }, [transactions]);
+  const tokenFilterLabel = tokenOptions.find((o) => o.id === tokenFilter)?.label;
 
   // Filter transactions based on selected filters
   const filteredTransactions = useMemo(() => {
@@ -193,7 +253,7 @@ export default function TradeHistory() {
 
     // Filter by token
     if (tokenFilter && tokenFilter !== "All") {
-      filtered = filtered.filter(t => t.tokenName === tokenFilter);
+      filtered = filtered.filter(t => t.projectId === tokenFilter);
     }
 
     // Filter by date
@@ -249,6 +309,11 @@ export default function TradeHistory() {
         return {
           bg: "rgba(235, 87, 87, 0.1)",
           text: "#EB5757",
+        };
+      default:
+        return {
+          bg: "rgba(99, 100, 102, 0.15)",
+          text: "#B3B5B6",
         };
     }
   };
@@ -356,7 +421,7 @@ export default function TradeHistory() {
                   letterSpacing: "-0.3px",
                 }}
               >
-                {tokenFilter && tokenFilter !== "All" ? tokenFilter : (tokenFilter === "All" ? t.launchpad?.tradeHistory?.all || "All" : t.launchpad?.tradeHistory?.token || "Token")}
+                {tokenFilter && tokenFilter !== "All" ? tokenFilterLabel ?? (t.launchpad?.tradeHistory?.token || "Token") : (tokenFilter === "All" ? t.launchpad?.tradeHistory?.all || "All" : t.launchpad?.tradeHistory?.token || "Token")}
               </span>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                 <path
@@ -372,13 +437,13 @@ export default function TradeHistory() {
               <div className="absolute top-full left-0 !mt-1 bg-[#131519] border border-[#2B2D30] rounded-xl overflow-hidden z-10 min-w-[140px] max-h-[200px] overflow-y-auto">
                 {tokenOptions.map((option) => (
                   <button
-                    key={option}
+                    key={option.id}
                     onClick={() => {
-                      setTokenFilter(option);
+                      setTokenFilter(option.id);
                       setOpenDropdown(null);
                     }}
                     className={`w-full cursor-pointer  !px-3 !py-2.5 text-left hover:bg-[#2B2D30] transition-colors ${
-                      tokenFilter === option ? "bg-[#2B2D30]" : ""
+                      tokenFilter === option.id ? "bg-[#2B2D30]" : ""
                     }`}
                     style={{
                       fontFamily: "'Inter Variable', Inter, sans-serif",
@@ -389,7 +454,7 @@ export default function TradeHistory() {
                       color: "#FFFFFF",
                     }}
                   >
-                    {option === "All" ? t.launchpad?.tradeHistory?.all || option : option}
+                    {option.id === "All" ? t.launchpad?.tradeHistory?.all || option.label : option.label}
                   </button>
                 ))}
               </div>
@@ -531,8 +596,13 @@ export default function TradeHistory() {
                 color: "#636466",
               }}
             >
-              {t.launchpad?.tradeHistory?.noTradeHistory || "No trade history yet"}
+              {loadError ?? (t.launchpad?.tradeHistory?.noTradeHistory || "No trade history yet")}
             </span>
+            {loadError && (
+              <button type="button" onClick={() => fetchTradeHistory(1)} className="text-[#40E0D0] text-sm font-medium">
+                Retry
+              </button>
+            )}
             <span
               style={{
                 fontFamily: "'Inter Variable', Inter, sans-serif",
@@ -729,6 +799,16 @@ export default function TradeHistory() {
                         }}
                       >
                         {transaction.date}
+                        {transaction.transactionHash && (
+                          <a
+                            href={explorerUrl("tx", transaction.transactionHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block text-[#40E0D0] text-xs hover:underline"
+                          >
+                            View tx
+                          </a>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -834,6 +914,26 @@ export default function TradeHistory() {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="flex flex-col items-center !gap-2 !pt-4">
+              {dateFilter && dateFilter !== "All" && page < totalPages && (
+                <p style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontSize: "12px", color: "#636466" }}>
+                  The date filter applies to the trades loaded so far. Load more to search older trades.
+                </p>
+              )}
+              <p style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontSize: "12px", color: "#636466" }}>
+                Showing {transactions.length} of {total} trades
+              </p>
+              {page < totalPages && (
+                <button
+                  type="button"
+                  onClick={() => fetchTradeHistory(page + 1)}
+                  disabled={isLoadingMore}
+                  className="!px-4 !py-2 rounded-full bg-[#2B2D30] text-white text-sm hover:bg-[#3B3D40] disabled:opacity-50"
+                >
+                  {isLoadingMore ? "Loading…" : "Load more"}
+                </button>
+              )}
             </div>
           </>
         )}

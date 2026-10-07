@@ -1,11 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { apiService, ApiError } from '../../services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { setAccessToken } from '@/lib/session';
+import { CodeInput, emptyCode, type CodeInputHandle } from '../ui/CodeInput';
+import { LegalNotice } from '../ui/LegalNotice';
 
 interface VerifyPhoneProps {
   onBack?: () => void;
@@ -16,74 +19,29 @@ export const VerifyPhone: React.FC<VerifyPhoneProps> = ({
   onComplete
 }) => {
   const t = useT();
-  const [code, setCode] = useState(['', '', '', '', '', '']);
+  const [code, setCode] = useState<string[]>(emptyCode());
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
-const [, setDevelopmentOtp] = useState<string>('');
   const [isResending, setIsResending] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendCooldown, setResendCooldown] = useState(30);
+  const codeInputRef = useRef<CodeInputHandle>(null);
 
   useEffect(() => {
     const storedPhoneNumber = localStorage.getItem('swarp_fd_pending_phone');
-    if (storedPhoneNumber) {
-      setPhoneNumber(storedPhoneNumber);
+    if (!storedPhoneNumber) {
+      // Nothing to verify: the user arrived here directly.
+      window.location.replace('/');
+      return;
     }
-
-    setResendCooldown(30);
-    const initialTimer = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) {
-          clearInterval(initialTimer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    // Development mode: Show notice about Twilio Verify
-    if (process.env.NODE_ENV !== 'production') {
-      // With Twilio Verify, OTP is no longer returned in API response
-      // OTP will be sent directly to the phone via SMS
-      setDevelopmentOtp('Using Twilio Verify - Check SMS');
-    }
-
-    return () => clearInterval(initialTimer);
+    setPhoneNumber(storedPhoneNumber);
   }, []);
 
-  const handleCodeChange = (index: number, value: string) => {
-    if (value.length > 1) return;
-    const newCode = [...code];
-    newCode[index] = value;
-    setCode(newCode);
-    
-    // Clear error when user starts typing
-    if (error) setError('');
-
-    // Auto-focus next input
-    if (value && index < 5) {
-      const nextInput = document.querySelector(`input[data-index="${index + 1}"]`) as HTMLInputElement;
-      if (nextInput) nextInput.focus();
-    }
-
-    // Auto-submit when all 6 digits are entered
-    if (value && index === 5) {
-      const isComplete = newCode.every(digit => digit !== '');
-      if (isComplete) {
-        // Small delay to ensure the UI updates before submission
-        setTimeout(() => {
-          handleContinueWithCode(newCode.join(''));
-        }, 100);
-      }
-    }
-  };
-
-  const handleBackspace = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !code[index] && index > 0) {
-      const prevInput = document.querySelector(`input[data-index="${index - 1}"]`) as HTMLInputElement;
-      if (prevInput) prevInput.focus();
-    }
-  };
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const id = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendCooldown]);
 
   const handleResendOTP = async () => {
     if (!phoneNumber || resendCooldown > 0 || isResending) return;
@@ -93,33 +51,12 @@ const [, setDevelopmentOtp] = useState<string>('');
 
     try {
       await apiService.continueWithPhone(phoneNumber);
-      
       setResendCooldown(30);
-      const cooldownTimer = setInterval(() => {
-        setResendCooldown((prev) => {
-          if (prev <= 1) {
-            clearInterval(cooldownTimer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-
-      // Development mode: Remind about Twilio Verify
-      if (process.env.NODE_ENV !== 'production') {
-        setDevelopmentOtp('OTP Resent - Check SMS');
-      }
-
-      // Clear the current code
-      setCode(['', '', '', '', '', '']);
-      
-      // Show success message briefly
-      setError('');
-      
+      setCode(emptyCode());
+      codeInputRef.current?.focus();
     } catch (error) {
       const apiError = error as ApiError;
-      console.error('Resend OTP failed:', error);
-      
+
       if (apiError.message.includes('Failed to send SMS')) {
         setError(t.onboarding?.verifyPhone?.errors?.failedToSendSms || 'Failed to send SMS. Please check your phone number and try again.');
       } else {
@@ -151,7 +88,7 @@ const [, setDevelopmentOtp] = useState<string>('');
       });
 
       // Store the access token
-      localStorage.setItem('swarp_fd_access_token', result.token);
+      setAccessToken(result.token);
       localStorage.setItem('swarp_fd_user', JSON.stringify(result.user));
       
       // Note: Keep pendingPhoneNumber and isNewUser in localStorage for CreatingWallet component
@@ -162,8 +99,7 @@ const [, setDevelopmentOtp] = useState<string>('');
       }
     } catch (error) {
       const apiError = error as ApiError;
-      console.error('OTP verification failed:', error);
-      
+
       if (apiError.statusCode === 401) {
         if (apiError.message.includes('expired')) {
           setError(t.onboarding?.verifyPhone?.errors?.otpExpired || 'OTP has expired. Please request a new code.');
@@ -174,11 +110,8 @@ const [, setDevelopmentOtp] = useState<string>('');
         setError(apiError.message || 'Verification failed. Please try again.');
       }
       
-      // Clear the wrong code
-      setCode(['', '', '', '', '', '']);
-      // Focus on first input
-      const firstInput = document.querySelector(`input[data-index="0"]`) as HTMLInputElement;
-      if (firstInput) firstInput.focus();
+      setCode(emptyCode());
+      codeInputRef.current?.focus();
     } finally {
       setIsLoading(false);
     }
@@ -218,25 +151,21 @@ const [, setDevelopmentOtp] = useState<string>('');
               </p>
             </div>
             
-            {/* Code Input Fields */}
-            <div className='flex gap-3 justify-center'>
-              {code.map((digit, index) => (
-                <input
-                  key={index}
-                  data-index={index}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleCodeChange(index, e.target.value)}
-                  onKeyDown={(e) => handleBackspace(index, e)}
-                  disabled={isLoading}
-                  className={`w-12 h-12 text-center text-white text-xl font-semibold bg-[#090A11] border rounded-xl focus:outline-none transition-colors ${
-                    error ? 'border-red-500' : 'border-[#2B2D30] focus:border-[#40E0D0]'
-                  } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                />
-              ))}
-            </div>
+            <CodeInput
+              ref={codeInputRef}
+              value={code}
+              onChange={(digits) => {
+                setCode(digits);
+                if (error) setError('');
+              }}
+              onComplete={handleContinueWithCode}
+              oneTimeCode
+              autoFocus
+              disabled={isLoading}
+              invalid={Boolean(error)}
+              ariaLabel={t.onboarding?.verifyPhone?.title || 'Verification code'}
+              boxClassName="w-12 h-12 text-center text-white text-xl font-semibold bg-[#090A11] border rounded-xl focus:outline-none transition-colors"
+            />
 
             {/* Error Message */}
             {error && (
@@ -251,24 +180,6 @@ const [, setDevelopmentOtp] = useState<string>('');
                 {t.onboarding?.verifyPhone?.newCodeIn || 'You can get a new code in'} <span className='text-white'>{resendCooldown} {t.onboarding?.verifyPhone?.sec || 'sec'}</span>
               </div>
             )}
-
-            {/* Development Mode Notice - Twilio Verify */}
-            {/* {process.env.NODE_ENV !== 'production' && developmentOtp && (
-              <div className="bg-blue-900/30 border border-blue-600/50 rounded-lg p-3 max-w-sm">
-                <div className="text-blue-300 text-xs font-semibold mb-1">DEV MODE - TWILIO VERIFY:</div>
-                <div className="text-blue-100 text-sm text-center">
-                  {developmentOtp}
-                </div>
-                <div className="text-blue-400/70 text-xs mt-2 text-center">
-                  📱 OTP sent via Twilio Verify to your phone number
-                </div>
-                {developmentOtp.includes('Check SMS') && (
-                  <div className="text-blue-400/70 text-xs mt-1 text-center">
-                    Enter the 6-digit code you received via SMS
-                  </div>
-                )}
-              </div>
-            )} */}
 
             {/* Resend Code */}
             <div>
@@ -295,25 +206,7 @@ const [, setDevelopmentOtp] = useState<string>('');
         <div className='flex flex-col gap-2 justify-center items-center pb-4'>
           <div className='flex flex-col gap-4 justify-center items-center'>
             <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
-            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
-              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
-              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
-              </a>.
-            </p>
+            <LegalNotice />
             
             {/* Loading indicator when processing */}
             {(isLoading || isResending) && (

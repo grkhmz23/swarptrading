@@ -3,58 +3,32 @@
 import { useEffect, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
-import { useT } from '@/i18n/I18nProvider';
+import { getValidAccessToken } from '@/lib/session';
+import { isSessionUnlocked } from '@/lib/pinGate';
 
 export default function Home() {
-  const t = useT();
   const router = useRouter();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('swarp_fd_access_token');
-    const wallet = localStorage.getItem('swarp_fd_wallet');
-    const onboardingComplete = localStorage.getItem('swarp_fd_onboarding_complete');
+    const token = getValidAccessToken();
+    const onboardingComplete = localStorage.getItem('swarp_fd_onboarding_complete') === 'true';
 
-    if (token && wallet && onboardingComplete === 'true') {
-      try {
-        const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-        const currentTime = Math.floor(Date.now() / 1000);
-
-        if (tokenPayload.exp && tokenPayload.exp > currentTime) {
-          setIsAuthenticated(true);
-        } else {
-          localStorage.removeItem('swarp_fd_access_token');
-          localStorage.removeItem('swarp_fd_wallet');
-          localStorage.removeItem('swarp_fd_onboarding_complete');
-        }
-      } catch {
-        localStorage.removeItem('swarp_fd_access_token');
-        localStorage.removeItem('swarp_fd_wallet');
-        localStorage.removeItem('swarp_fd_onboarding_complete');
-      }
+    if (token && onboardingComplete) {
+      router.replace(isSessionUnlocked(token) ? '/dashboard' : '/unlock?next=/dashboard');
+      return;
     }
-    setIsLoading(false);
-  }, []);
+    setShowOnboarding(true);
+  }, [router]);
 
-  const handleOnboardingComplete = (_data: { method: string; email?: string; password?: string }) => {
+  const handleOnboardingComplete = () => {
     localStorage.setItem('swarp_fd_onboarding_complete', 'true');
-    setIsAuthenticated(true);
-    router.push('/dashboard');
+    router.replace('/dashboard');
   };
 
-  if (isLoading) {
+  if (!showOnboarding) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#090A11]">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#40E0D0]"></div>
-      </div>
-    );
-  }
-
-  if (isAuthenticated) {
-    router.replace('/dashboard');
-    return (
-      <div className="flex items-center justify-center h-screen bg-[#090A11]">
+      <div className="flex items-center justify-center h-screen bg-[#090A11]" aria-busy="true">
         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#40E0D0]"></div>
       </div>
     );

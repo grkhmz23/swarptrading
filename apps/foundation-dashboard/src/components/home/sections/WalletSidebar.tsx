@@ -15,6 +15,7 @@ interface UserProfile {
   username?: string;
   firstName: string;
   lastName: string;
+  usernamePromptDismissed?: boolean;
 }
 
 interface WalletSidebarProps {
@@ -22,16 +23,13 @@ interface WalletSidebarProps {
   wallet: WalletData | null;
   user: UserState;
   userProfile: UserProfile | null;
-  mainnetBalance: number;
-  isBalanceSyncing: boolean;
   portfolioValue?: number;
   formatPublicKey: (key: string | null | undefined) => string;
   handleCopyAddress: () => void;
   handleOpenUsernameModal: () => void;
   handleCloseUsernameCard: () => void;
-  handleBalanceSync: () => void;
   handleTopUpClick: () => void;
-  handleMoonPaySell: () => void;
+  handleWithdraw: () => void;
   setShowSendModal: (show: boolean) => void;
   setShowReceiveModal: (show: boolean) => void;
   setShowSwapModal: (show: boolean) => void;
@@ -43,16 +41,13 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
   wallet,
   user,
   userProfile,
-  mainnetBalance,
-  isBalanceSyncing,
   portfolioValue,
   formatPublicKey,
   handleCopyAddress,
   handleOpenUsernameModal,
   handleCloseUsernameCard,
-  handleBalanceSync,
   handleTopUpClick,
-  handleMoonPaySell,
+  handleWithdraw,
   setShowSendModal,
   setShowReceiveModal,
   setShowSwapModal,
@@ -60,7 +55,6 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
 }) => {
   const walletT = t.wallet as Record<string, unknown> | undefined;
   const commonT = t.common as Record<string, string> | undefined;
-  const moonPayT = t.moonPay as Record<string, string> | undefined;
 
   return (
     <div className={`w-full lg:w-[400px] lg:min-w-[400px] !p-4 lg:!p-7 !space-y-4 lg:!space-y-6 border-b lg:border-l border-[#2B2D30] overflow-y-auto overflow-x-hidden h-full ${className}`}>
@@ -106,7 +100,7 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
         </div>
 
         {/* Username Card - Show only if no username set and not dismissed */}
-        {userProfile && !userProfile.username && userProfile.username !== 'dismissed' && (
+        {userProfile && !userProfile.username && !userProfile.usernamePromptDismissed && (
           <div className="bg-[#131519] rounded-xl !p-4 border border-[#2B2D30] !mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-gradient-to-r from-[#143536] rounded-full flex items-center justify-center">
@@ -146,7 +140,7 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
         )}
 
         {/* Username Display - Show if username is set */}
-        {userProfile?.username && userProfile.username !== 'dismissed' && (
+        {userProfile?.username && (
           <div className="bg-[#131519] rounded-xl !p-4 border border-[#2B2D30] !mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-gradient-to-r from-[#40E0D0] to-[#40E0D0]/80 rounded-full flex items-center justify-center">
@@ -189,36 +183,6 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
             {wallet ? `${wallet.balance.toFixed(6)} SOL` : '0.000000 SOL'}
           </p>
 
-          {/* Mainnet Balance Info */}
-          {mainnetBalance > 0 && (
-            <div className="!mt-3 !p-3 bg-[#40E0D0]/10 border border-[#40E0D0]/20 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[#40E0D0] text-sm font-medium">
-                    {moonPayT?.mainnetBalance || 'MoonPay Mainnet Balance'}
-                  </p>
-                  <p className="text-white text-lg font-semibold">{mainnetBalance.toFixed(6)} SOL</p>
-                </div>
-                <button
-                  onClick={handleBalanceSync}
-                  disabled={isBalanceSyncing}
-                  className="bg-[#40E0D0] text-[#090A11] !px-3 !py-1.5 rounded-full text-sm font-semibold hover:bg-[#40E0D0]/90 transition-colors disabled:opacity-50"
-                >
-                  {isBalanceSyncing ? (
-                    <div className="flex items-center gap-1">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#090A11]"></div>
-                      <span>{moonPayT?.syncing || 'Syncing...'}</span>
-                    </div>
-                  ) : (
-                    moonPayT?.syncToDevnet || 'Sync to Devnet'
-                  )}
-                </button>
-              </div>
-              <p className="text-[#636466] text-xs !mt-1">
-                {moonPayT?.purchasedVia || 'SOL purchased via MoonPay (on mainnet)'}
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Action Buttons */}
@@ -228,7 +192,7 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
             { icon: 'receive', label: (walletT?.receive as string) || 'Receive', action: () => setShowReceiveModal(true) },
             { icon: 'swap', label: (walletT?.swap as string) || 'Swap', action: () => setShowSwapModal(true) },
             { icon: 'topup', label: (walletT?.topUp as string) || 'Top up', action: handleTopUpClick },
-            { icon: 'withdraw', label: (walletT?.withdraw as string) || 'Withdraw', action: handleMoonPaySell }
+            { icon: 'withdraw', label: (walletT?.withdraw as string) || 'Withdraw', action: handleWithdraw }
           ].map((action) => (
             <button
               key={action.label}

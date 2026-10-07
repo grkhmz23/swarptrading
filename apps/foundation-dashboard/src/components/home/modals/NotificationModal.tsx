@@ -5,6 +5,8 @@ import Image from 'next/image';
 import { apiService } from '@/services/api';
 import { Notification } from '@/types/Notification';
 import { useT } from '@/i18n/I18nProvider';
+import { getAccessToken } from '@/lib/session';
+import { useNow } from '@/hooks/useNow';
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -24,6 +26,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   const [activeTab, setActiveTab] = useState<'foundation' | 'launchpad'>('foundation');
 
   const modalRef = useRef<HTMLDivElement>(null);
+  const now = useNow(30_000);
 
   useEffect(() => {
     if (isOpen) loadNotifications();
@@ -46,7 +49,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
       setIsLoading(true);
       setError(null);
 
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) return setError(t.notifications?.authRequired || 'Authentication required');
 
       const response = await apiService.getNotifications(token, { limit: 50 });
@@ -60,7 +63,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   };
 
   const formatTimeAgo = (timestamp: string) => {
-    const diffMs = Date.now() - new Date(timestamp).getTime();
+    const diffMs = now - new Date(timestamp).getTime();
     const mins = Math.floor(diffMs / 60000);
     const hours = Math.floor(mins / 60);
     const days = Math.floor(hours / 24);
@@ -108,7 +111,8 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     const replaceParams = (template: string, params: Record<string, string>) => {
       let result = template;
       for (const [key, value] of Object.entries(params)) {
-        result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+        // Replacer function: values are inserted literally (no `$&` / `$1` expansion).
+        result = result.split(`{${key}}`).join(value);
       }
       return result;
     };
@@ -543,6 +547,15 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   };
 
   const handleClick = (n: Notification) => {
+    if (!n.isRead) {
+      const token = getAccessToken();
+      if (token) {
+        setNotifications((list) => list.map((item) => (item.id === n.id ? { ...item, isRead: true } : item)));
+        apiService.markNotificationAsRead(n.id, token).catch(() => {
+          // Still unread on the server; it will show as unread on the next load.
+        });
+      }
+    }
     onNotificationClick?.(n);
     onClose();
   };

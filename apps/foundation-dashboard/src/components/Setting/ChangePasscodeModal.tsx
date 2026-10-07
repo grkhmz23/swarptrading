@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/I18nProvider";
+import { checkNewPin, pinProblemMessage } from "@/lib/pin";
+import { errorMessage } from "@/lib/http";
 
 type Props = {
   isOpen: boolean;
@@ -13,6 +15,8 @@ export default function ChangePasscodeModal({ isOpen, onClose, onSubmit }: Props
   const t = useT();
   const [oldPasscode, setOldPasscode] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
+  const [confirmPasscode, setConfirmPasscode] = useState("");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [oldPasscodeError, setOldPasscodeError] = useState<string | null>(null);
   const [newPasscodeError, setNewPasscodeError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -28,6 +32,8 @@ export default function ChangePasscodeModal({ isOpen, onClose, onSubmit }: Props
       document.body.style.overflow = "";
       setOldPasscode("");
       setNewPasscode("");
+      setConfirmPasscode("");
+      setConfirmError(null);
       setOldPasscodeError(null);
       setNewPasscodeError(null);
       setSubmitError(null);
@@ -57,8 +63,20 @@ export default function ChangePasscodeModal({ isOpen, onClose, onSubmit }: Props
       hasValidationError = true;
     }
 
-    if (!/^\d{6}$/.test(newPasscode)) {
+    const pinProblem = checkNewPin(newPasscode);
+    if (pinProblem === 'format') {
       setNewPasscodeError(t.modals?.changePasscode?.errors?.newMustBe6Digits || 'New passcode must be 6 digits');
+      hasValidationError = true;
+    } else if (pinProblem) {
+      setNewPasscodeError(pinProblemMessage(pinProblem));
+      hasValidationError = true;
+    } else if (newPasscode === oldPasscode) {
+      setNewPasscodeError('New passcode must be different from the old one');
+      hasValidationError = true;
+    }
+
+    if (confirmPasscode !== newPasscode) {
+      setConfirmError('Passcodes do not match');
       hasValidationError = true;
     }
 
@@ -67,6 +85,7 @@ export default function ChangePasscodeModal({ isOpen, onClose, onSubmit }: Props
     try {
       setOldPasscodeError(null);
       setNewPasscodeError(null);
+      setConfirmError(null);
       setSubmitError(null);
       setStatus("loading");
 
@@ -76,15 +95,7 @@ export default function ChangePasscodeModal({ isOpen, onClose, onSubmit }: Props
       setTimeout(onClose, 1200);
     } catch (err: unknown) {
       setStatus("idle");
-      if (err instanceof Error) {
-        setSubmitError(err.message);
-      } else if (err && typeof err === "object" && "message" in err && typeof (err as { message?: unknown }).message === "string") {
-        setSubmitError((err as { message: string }).message);
-      } else if (typeof err === "string") {
-        setSubmitError(err);
-      } else {
-        setSubmitError(t.modals?.changePasscode?.errors?.failedToUpdate || 'Failed to update passcode');
-      }
+      setSubmitError(errorMessage(err, t.modals?.changePasscode?.errors?.failedToUpdate || 'Failed to update passcode'));
     }
   }
 
@@ -122,7 +133,7 @@ export default function ChangePasscodeModal({ isOpen, onClose, onSubmit }: Props
 
       {/* Modal Card */}
       <div
-        className="relative w-[335px] sm:max-w-[335px] md:min-w-[400px] lg:min-w-[435px] max-w-full h-[420px] max-h-[90vh] rounded-2xl overflow-hidden"
+        className="relative w-[335px] sm:max-w-[335px] md:min-w-[400px] lg:min-w-[435px] max-w-full min-h-[420px] max-h-[90vh] overflow-y-auto rounded-2xl overflow-hidden"
         role="document"
       >
         <div
@@ -207,6 +218,31 @@ export default function ChangePasscodeModal({ isOpen, onClose, onSubmit }: Props
               {newPasscodeError && (
                 <p className="text-red-500 text-[12px] mt-1 font-medium">{newPasscodeError}</p>
               )}
+            </label>
+
+            {/* Confirm New Passcode */}
+            <label className="block text-white/70 text-sm">
+              <input
+                value={confirmPasscode}
+                onChange={(e) => {
+                  setConfirmPasscode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                  setConfirmError(null);
+                  setSubmitError(null);
+                }}
+                maxLength={6}
+                placeholder="Confirm New Passcode"
+                aria-label="Confirm new passcode"
+                type="password"
+                inputMode="numeric"
+                autoComplete="new-password"
+                className="w-full !py-3 !px-4 mt-2 rounded-lg text-[14px] font-[400] placeholder:opacity-40 outline-none"
+                style={{
+                  background: "#131519",
+                  border: confirmError ? "1px solid #ef4444" : "0.5px solid #2B2D30",
+                  color: "rgba(255,255,255,0.9)",
+                }}
+              />
+              {confirmError && <p className="text-red-500 text-[12px] mt-1 font-medium">{confirmError}</p>}
             </label>
 
             {submitError && (

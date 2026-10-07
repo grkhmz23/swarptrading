@@ -14,39 +14,13 @@ import {
   HistogramData,
   LineStyle,
 } from "lightweight-charts";
+import { tradesToOHLC, type ChartTrade, type Timeframe } from "@/lib/ohlc";
 
 // Types for trade data
-interface Trade {
-  id: string;
-  type: "buy" | "sell";
-  solAmount: string;
-  tokenAmount: string;
-  pricePerToken?: string;
-  createdAt: string;
-}
-
-// OHLC Candlestick data structure
-interface OHLCData {
-  time: Time;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
-
-// Volume data structure
-interface VolumeData {
-  time: Time;
-  value: number;
-  color: string;
-}
-
-// Timeframe options
-type Timeframe = "1s" | "5s" | "15s" | "30s" | "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
 // Props for the chart component
 interface TradingViewChartProps {
-  trades: Trade[];
+  trades: ChartTrade[];
   currentPrice?: number;
   tokenSymbol?: string;
   height?: number;
@@ -85,192 +59,40 @@ const colors = {
 };
 
 // Timeframe to milliseconds mapping
-const timeframeToMs: Record<Timeframe, number> = {
-  "1s": 1000,
-  "5s": 5000,
-  "15s": 15000,
-  "30s": 30000,
-  "1m": 60000,
-  "5m": 300000,
-  "15m": 900000,
-  "1h": 3600000,
-  "4h": 14400000,
-  "1d": 86400000,
+/** Candles + volume in the shape lightweight-charts expects. */
+function chartSeries(trades: ChartTrade[], timeframe: Timeframe, currentPrice?: number) {
+  const { candles, volume } = tradesToOHLC(trades, timeframe, currentPrice);
+  return {
+    candles: candles.map((c) => ({ ...c, time: c.time as Time })),
+    volume: volume.map((v) => ({ time: v.time as Time, value: v.value, color: v.up ? colors.volumeUp : colors.volumeDown })),
+  };
+}
+
+/** Price label formatter: scientific notation for tiny bonding-curve prices. */
+const formatChartPrice = (price: number): string => {
+  if (price === 0) return "0";
+  const absPrice = Math.abs(price);
+  if (absPrice < 0.0001) {
+    const exp = Math.floor(Math.log10(absPrice));
+    const mantissa = absPrice / Math.pow(10, exp);
+    return `${mantissa.toFixed(2)}e${exp}`;
+  }
+  if (absPrice < 0.01) return absPrice.toFixed(6);
+  if (absPrice < 0.1) return absPrice.toFixed(5);
+  if (absPrice < 1) return absPrice.toFixed(4);
+  if (absPrice < 100) return absPrice.toFixed(2);
+  return absPrice.toFixed(0);
 };
 
-// Convert trades to OHLC candlestick data
-export function tradesToOHLC(
-  trades: Trade[],
-  timeframe: Timeframe,
-  currentPrice?: number
-): { candles: OHLCData[]; volume: VolumeData[] } {
-  if (!trades || trades.length === 0) {
-    // Generate simulated data if no trades
-    return generateSimulatedOHLC(currentPrice || 0.0000001, timeframe);
-  }
-
-  const intervalMs = timeframeToMs[timeframe];
-  const tradesWithPrice = trades.filter((t) => t.pricePerToken && parseFloat(t.pricePerToken) > 0);
-
-  if (tradesWithPrice.length === 0) {
-    return generateSimulatedOHLC(currentPrice || 0.0000001, timeframe);
-  }
-
-  // Sort trades by time (oldest first)
-  const sortedTrades = [...tradesWithPrice].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-
-  // Group trades into intervals
-  const intervals = new Map<
-    number,
-    { prices: number[]; volume: number; buyVolume: number; sellVolume: number }
-  >();
-
-  sortedTrades.forEach((trade) => {
-    const timestamp = new Date(trade.createdAt).getTime();
-    const intervalStart = Math.floor(timestamp / intervalMs) * intervalMs;
-    const price = parseFloat(trade.pricePerToken || "0");
-    const volume = parseFloat(trade.solAmount || "0");
-
-    if (!intervals.has(intervalStart)) {
-      intervals.set(intervalStart, { prices: [], volume: 0, buyVolume: 0, sellVolume: 0 });
-    }
-
-    const interval = intervals.get(intervalStart)!;
-    interval.prices.push(price);
-    interval.volume += volume;
-    if (trade.type === "buy") {
-      interval.buyVolume += volume;
-    } else {
-      interval.sellVolume += volume;
-    }
-  });
-
-  // Convert to OHLC format
-  const candles: OHLCData[] = [];
-  const volume: VolumeData[] = [];
-
-  // Sort interval keys
-  const sortedKeys = Array.from(intervals.keys()).sort((a, b) => a - b);
-
-  sortedKeys.forEach((timestamp) => {
-    const interval = intervals.get(timestamp)!;
-    const prices = interval.prices;
-
-    if (prices.length > 0) {
-      const open = prices[0];
-      const close = prices[prices.length - 1];
-      const high = Math.max(...prices);
-      const low = Math.min(...prices);
-
-      // Use Unix timestamp in seconds for lightweight-charts
-      const time = Math.floor(timestamp / 1000) as Time;
-
-      candles.push({ time, open, high, low, close });
-
-      volume.push({
-        time,
-        value: interval.volume,
-        color: close >= open ? colors.volumeUp : colors.volumeDown,
-      });
-    }
-  });
-
-  // Add current price as the latest candle if provided
-  if (currentPrice && currentPrice > 0) {
-    const now = Math.floor(Date.now() / 1000) as Time;
-
-    if (candles.length > 0) {
-      const lastCandle = candles[candles.length - 1];
-      const lastCandleTime = lastCandle.time as number;
-
-      // If current price is significantly different from last candle, update it
-      // or add a new candle for the current time
-      if ((now as number) > lastCandleTime) {
-        candles.push({
-          time: now,
-          open: lastCandle.close,
-          high: Math.max(lastCandle.close, currentPrice),
-          low: Math.min(lastCandle.close, currentPrice),
-          close: currentPrice,
-        });
-
-        // Add corresponding volume (0 since no new trade)
-        volume.push({
-          time: now,
-          value: 0,
-          color: currentPrice >= lastCandle.close ? colors.volumeUp : colors.volumeDown,
-        });
-      } else {
-        lastCandle.close = currentPrice;
-        lastCandle.high = Math.max(lastCandle.high, currentPrice);
-        lastCandle.low = Math.min(lastCandle.low, currentPrice);
-      }
-    } else {
-      // No candles exist, create one with current price
-      candles.push({
-        time: now,
-        open: currentPrice,
-        high: currentPrice,
-        low: currentPrice,
-        close: currentPrice,
-      });
-
-      volume.push({
-        time: now,
-        value: 0,
-        color: colors.volumeUp,
-      });
-    }
-  }
-
-  return { candles, volume };
-}
-
-// Generate simulated OHLC data for demo/empty state
-function generateSimulatedOHLC(
-  basePrice: number,
-  timeframe: Timeframe
-): { candles: OHLCData[]; volume: VolumeData[] } {
-  const candles: OHLCData[] = [];
-  const volume: VolumeData[] = [];
-  const intervalMs = timeframeToMs[timeframe];
-  const numCandles = 50;
-
-  // Start from (numCandles * interval) ago
-  const now = Date.now();
-  let currentPrice = basePrice > 0 ? basePrice * 0.7 : 0.00000005;
-
-  for (let i = numCandles; i >= 0; i--) {
-    const timestamp = now - i * intervalMs;
-    const time = Math.floor(timestamp / 1000) as Time;
-
-    // Random price movement (slightly upward bias for bonding curve simulation)
-    const volatility = currentPrice * 0.05; // 5% volatility
-    const trend = currentPrice * 0.002; // Slight upward trend
-    const change = (Math.random() - 0.45) * volatility + trend;
-
-    const open = currentPrice;
-    const close = Math.max(0.00000001, currentPrice + change);
-    const high = Math.max(open, close) * (1 + Math.random() * 0.02);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.02);
-
-    candles.push({ time, open, high, low, close });
-
-    // Simulated volume
-    const vol = Math.random() * 2 + 0.1;
-    volume.push({
-      time,
-      value: vol,
-      color: close >= open ? colors.volumeUp : colors.volumeDown,
-    });
-
-    currentPrice = close;
-  }
-
-  return { candles, volume };
-}
+const getPrecision = (price: number): number => {
+  if (!price) return 10;
+  const absPrice = Math.abs(price);
+  if (absPrice >= 1) return 4;
+  if (absPrice >= 0.01) return 6;
+  if (absPrice >= 0.0001) return 8;
+  if (absPrice >= 0.000001) return 10;
+  return 12;
+};
 
 // OHLC Legend data structure
 interface OHLCLegendData {
@@ -297,6 +119,12 @@ export default function TradingViewChart({
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>(initialTimeframe);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [ohlcLegend, setOhlcLegend] = useState<OHLCLegendData | null>(null);
+  const [hasData, setHasData] = useState(false);
+  // Latest inputs for the crosshair handler, which is registered once per chart.
+  const latestRef = useRef({ trades, timeframe: initialTimeframe, currentPrice });
+  useEffect(() => {
+    latestRef.current = { trades, timeframe: selectedTimeframe, currentPrice };
+  }, [trades, selectedTimeframe, currentPrice]);
 
   // Available timeframes for display
   const primaryTimeframes: Timeframe[] = ["1s", "30s", "1m"];
@@ -384,7 +212,7 @@ export default function TradingViewChart({
         borderColor: colors.border,
         borderVisible: true,
         timeVisible: true,
-        secondsVisible: selectedTimeframe === "1s" || selectedTimeframe === "5s",
+        secondsVisible: ["1s", "5s", "15s", "30s"].includes(latestRef.current.timeframe),
         rightOffset: 5,
         minBarSpacing: 6,
         fixLeftEdge: false,
@@ -403,42 +231,7 @@ export default function TradingViewChart({
       },
     });
 
-    // Custom price formatter for very small numbers
-    // Uses scientific notation (e.g., 5.39e-8) for tiny values
-    const formatPrice = (price: number): string => {
-      if (price === 0) return "0";
-
-      const absPrice = Math.abs(price);
-
-      // Use scientific notation for very small numbers (less than 0.0001)
-      if (absPrice < 0.0001) {
-        // Format as scientific notation with 2-3 significant digits
-        const exp = Math.floor(Math.log10(absPrice));
-        const mantissa = absPrice / Math.pow(10, exp);
-        return `${mantissa.toFixed(2)}e${exp}`;
-      }
-
-      // Regular formatting for larger numbers
-      if (absPrice < 0.01) return absPrice.toFixed(6);
-      if (absPrice < 0.1) return absPrice.toFixed(5);
-      if (absPrice < 1) return absPrice.toFixed(4);
-      if (absPrice < 100) return absPrice.toFixed(2);
-      return absPrice.toFixed(0);
-    };
-
-    // Calculate precision based on current price
-    // For very small numbers like 0.0000000539, we need high precision
-    const getPrecision = (price: number): number => {
-      if (price === 0) return 10;
-      const absPrice = Math.abs(price);
-      if (absPrice >= 1) return 4;
-      if (absPrice >= 0.01) return 6;
-      if (absPrice >= 0.0001) return 8;
-      if (absPrice >= 0.000001) return 10;
-      return 12; // For extremely small values
-    };
-
-    const precision = getPrecision(currentPrice || 0);
+    const precision = getPrecision(latestRef.current.currentPrice || 0);
 
     // Add candlestick series using v5 API with custom price format
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
@@ -451,7 +244,7 @@ export default function TradingViewChart({
       borderDownColor: colors.downColor,
       priceFormat: {
         type: "custom",
-        formatter: formatPrice,
+        formatter: formatChartPrice,
         minMove: Math.pow(10, -precision),
       },
       lastValueVisible: false, // Hide the horizontal price line
@@ -484,7 +277,8 @@ export default function TradingViewChart({
     chart.subscribeCrosshairMove((param) => {
       if (!param.time || !param.seriesData) {
         // Reset to latest candle when not hovering
-        const { candles, volume } = tradesToOHLC(trades, selectedTimeframe, currentPrice);
+        const latest = latestRef.current;
+        const { candles, volume } = chartSeries(latest.trades, latest.timeframe, latest.currentPrice);
         if (candles.length > 0) {
           const lastCandle = candles[candles.length - 1];
           const lastVolume = volume.length > 0 ? volume[volume.length - 1].value : 0;
@@ -531,16 +325,20 @@ export default function TradingViewChart({
       resizeObserver.disconnect();
       chart.remove();
     };
-  }, [height, selectedTimeframe, currentPrice]);
+  }, [height]);
 
   // Update chart data when trades or timeframe changes
   useEffect(() => {
     if (!candlestickSeriesRef.current || !volumeSeriesRef.current) return;
 
-    const { candles, volume } = tradesToOHLC(trades, selectedTimeframe, currentPrice);
+    const { candles, volume } = chartSeries(trades, selectedTimeframe, currentPrice);
 
+    const precision = getPrecision(currentPrice || candles[candles.length - 1]?.close || 0);
+    candlestickSeriesRef.current.applyOptions({ priceFormat: { type: "custom", formatter: formatChartPrice, minMove: Math.pow(10, -precision) } });
     candlestickSeriesRef.current.setData(candles as CandlestickData<Time>[]);
     volumeSeriesRef.current.setData(volume as HistogramData<Time>[]);
+    setHasData(candles.length > 0);
+    if (candles.length === 0) setOhlcLegend(null);
 
     if (candles.length > 0) {
       const lastCandle = candles[candles.length - 1];
@@ -570,7 +368,7 @@ export default function TradingViewChart({
       if (chartRef.current) {
         chartRef.current.applyOptions({
           timeScale: {
-            secondsVisible: tf === "1s" || tf === "5s",
+            secondsVisible: ["1s", "5s", "15s", "30s"].includes(tf),
           },
         });
       }
@@ -580,7 +378,7 @@ export default function TradingViewChart({
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (_e: MouseEvent) => {
+    const handleClickOutside = () => {
       if (isDropdownOpen) {
         setIsDropdownOpen(false);
       }
@@ -739,6 +537,14 @@ export default function TradingViewChart({
             borderRadius: "0px",
           }}
         />
+
+        {!hasData && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span style={{ fontFamily: "'Inter Variable', Inter, sans-serif", fontSize: "13px", color: colors.textMuted }}>
+              No trades yet{tokenSymbol ? ` for ${tokenSymbol}` : ""}
+            </span>
+          </div>
+        )}
 
         {/* OHLC Legend Overlay */}
         {ohlcLegend && (

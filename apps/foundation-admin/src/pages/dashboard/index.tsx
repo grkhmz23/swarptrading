@@ -1,5 +1,8 @@
 import { useCustom } from "@refinedev/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { LoadingCard } from "@/components/ui/loading";
+import { adminApiPath } from "@/config";
 import type { DashboardStats } from "@/types";
 import {
   LineChart,
@@ -44,9 +47,9 @@ const COLORS = ['#10b981', '#ef4444', '#f59e0b'];
 const renderCustomLabel = ({ cx, cy, midAngle, outerRadius, name, percent }: { cx: number; cy: number; midAngle?: number; outerRadius: number; name?: string; percent?: number }) => {
   const RADIAN = Math.PI / 180;
   const radius = outerRadius + 25;
-  const x = cx + radius * Math.cos(-(midAngle || 0) * RADIAN);
-  const y = cy + radius * Math.sin(-(midAngle || 0) * RADIAN);
-  const percentage = ((percent || 0) * 100).toFixed(0);
+  const x = cx + radius * Math.cos(-(midAngle ?? 0) * RADIAN);
+  const y = cy + radius * Math.sin(-(midAngle ?? 0) * RADIAN);
+  const percentage = ((percent ?? 0) * 100).toFixed(0);
 
   return (
     <text
@@ -62,25 +65,44 @@ const renderCustomLabel = ({ cx, cy, midAngle, outerRadius, name, percent }: { c
   );
 };
 
+const formatCount = (value: number | undefined): string =>
+  value === undefined || value === null ? "—" : Number(value).toLocaleString();
+
+const StatCard = ({ title, value, detail }: { title: string; value: number | undefined; detail: string }) => (
+  <Card>
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardTitle className="text-sm font-medium">{title}</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="text-2xl font-bold">{formatCount(value)}</div>
+      <p className="text-xs text-muted-foreground">{detail}</p>
+    </CardContent>
+  </Card>
+);
+
 export const Dashboard = () => {
-  const { result: statsResult, query: { isLoading: statsLoading } } = useCustom<DashboardStats>({
-    url: "/admin-api/dashboard/stats",
+  const {
+    result: statsResult,
+    query: { isLoading: statsLoading, isError: statsIsError, error: statsError, refetch: refetchStats },
+  } = useCustom<DashboardStats>({
+    url: adminApiPath("dashboard/stats"),
     method: "get",
   });
 
-  const { result: chartsResult, query: { isLoading: chartsLoading } } = useCustom<ChartData>({
-    url: "/admin-api/dashboard/charts",
+  const {
+    result: chartsResult,
+    query: { isLoading: chartsLoading, isError: chartsIsError, error: chartsError, refetch: refetchCharts },
+  } = useCustom<ChartData>({
+    url: adminApiPath("dashboard/charts"),
     method: "get",
   });
 
-  const stats = statsResult.data;
-  const charts = chartsResult.data;
+  const stats = statsResult?.data;
+  const charts = chartsResult?.data;
 
   const isLoading = statsLoading || chartsLoading;
+  const loadError = statsIsError ? statsError : chartsIsError ? chartsError : null;
 
-  // Debug: Log the chart data
-
-  // Check if we have any data
   const hasTransactionData = charts?.transactionTrends?.some(d => d.total > 0);
   const hasStatusData = charts?.statusDistribution?.some(d => d.value > 0);
   const hasUserData = charts?.userGrowth?.some(d => d.totalUsers > 0);
@@ -90,52 +112,59 @@ export const Dashboard = () => {
       <h1 className="text-3xl font-bold">Dashboard</h1>
 
       {isLoading ? (
-        <div>Loading...</div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((key) => (
+            <Card key={key}>
+              <CardContent className="pt-6">
+                <LoadingCard lines={2} />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : loadError ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Unable to load dashboard data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">{loadError.message}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (statsIsError) void refetchStats();
+                if (chartsIsError) void refetchCharts();
+              }}
+            >
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <>
           {/* Stats Cards */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats?.totalUsers || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stats?.verifiedUsers || 0} verified
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Wallets</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats?.totalWallets || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stats?.activeWallets || 0} active
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Transactions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats?.totalTransactions || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stats?.completedTransactions || 0} completed
-                </p>
-              </CardContent>
-            </Card>
+            <StatCard
+              title="Total Users"
+              value={stats?.totalUsers}
+              detail={`${formatCount(stats?.verifiedUsers)} verified`}
+            />
+            <StatCard
+              title="Total Wallets"
+              value={stats?.totalWallets}
+              detail={`${formatCount(stats?.activeWallets)} active`}
+            />
+            <StatCard
+              title="Transactions"
+              value={stats?.totalTransactions}
+              detail={`${formatCount(stats?.completedTransactions)} completed`}
+            />
           </div>
 
           {/* Charts */}
           <div className="grid gap-4 md:grid-cols-2">
             {/* Transaction Trends */}
-            <Card className="col-span-2">
+            <Card className="md:col-span-2">
               <CardHeader>
                 <CardTitle>Transaction Trends (Last 7 Days)</CardTitle>
               </CardHeader>
@@ -214,7 +243,7 @@ export const Dashboard = () => {
                           const date = new Date(value);
                           return date.toLocaleDateString();
                         }}
-                        formatter={(value: number) => [`${value.toFixed(4)} SOL`, 'Volume']}
+                        formatter={(value) => [`${Number(value).toFixed(4)} SOL`, 'Volume']}
                       />
                       <Legend />
                       <Bar dataKey="volume" fill="#40e0d0" name="Volume (SOL)" />
@@ -260,7 +289,7 @@ export const Dashboard = () => {
             </Card>
 
             {/* User Growth */}
-            <Card className="col-span-2">
+            <Card className="md:col-span-2">
               <CardHeader>
                 <CardTitle>User Growth (Last 30 Days)</CardTitle>
               </CardHeader>

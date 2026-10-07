@@ -2,6 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Production builds get a Content-Security-Policy meta tag injected by
+         vite.config.ts (cspMetaPlugin); the full set of security headers is in
+         customHttp.yml. -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Swarp Foundation Admin</title>
