@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import { apiService, ApiError } from '../../services/api';
+import { API_BASE_URL } from '@/config/env';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import  ReferralCodeModal  from './ReferralCodeModal';
 import { useT } from '@/i18n/I18nProvider';
@@ -190,7 +191,7 @@ useEffect(() => {
   };
 
   const handleContinueWithGoogle = () => {
-window.location.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/auth/google/callback`;
+window.location.href = `${API_BASE_URL}/auth/google/callback`;
 
   };
 

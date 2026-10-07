@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   push:
@@ -6,27 +6,49 @@ on:
   pull_request:
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  dashboard:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: [foundation-dashboard, foundation-admin]
     defaults:
       run:
-        working-directory: apps/${{ matrix.app }}
+        working-directory: apps/foundation-dashboard
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: apps/${{ matrix.app }}/package-lock.json
+          cache-dependency-path: apps/foundation-dashboard/package-lock.json
       - run: npm ci
+      - run: npm run type-check
+      - run: npm run lint
+      - run: npm test
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: https://api.example.invalid
+          NEXT_PUBLIC_SOLANA_NETWORK: devnet
+
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/foundation-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/foundation-admin/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+        env:
+          VITE_ADMIN_API_URL: https://api.example.invalid

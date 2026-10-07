@@ -6,23 +6,27 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "verify": "npm run type-check && npm run lint && npm run test"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.10.1",
     "@solana/web3.js": "^1.95.4",
     "@types/qrcode": "^1.5.5",
+    "@veriff/incontext-sdk": "2.5.0",
     "flowbite-react": "^0.12.10",
     "framer-motion": "^12.23.24",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.537.0",
-    "next": "16.3.2",
+    "next": "16.3.8",
     "qrcode": "^1.5.4",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "react-phone-number-input": "^3.4.12",
     "react-redux": "^9.2.0",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -31,10 +35,12 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9",
-    "eslint-config-next": "16.3.2",
+    "eslint-config-next": "16.3.8",
     "postcss": "^8.5.26",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.7"
   },
   "overrides": {
     "bn.js": "^5.2.5",
@@ -43,5 +49,8 @@
     "tar": "^7.5.21",
     "uuid": "^14.0.2",
     "ws": "^8.21.3"
+  },
+  "engines": {
+    "node": ">=20.9"
   }
 }
