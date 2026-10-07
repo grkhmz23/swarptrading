@@ -22,7 +22,7 @@ const resolveProfileImageSrc = (value?: string | null) => {
   // Allow http/https URLs that point to configured remote hosts
   try {
     const asUrl = new URL(trimmed);
-    if (asUrl.protocol === "http:" || asUrl.protocol === "https:") {
+    if (asUrl.protocol === "https:") {
       return trimmed;
     }
   } catch {
@@ -149,6 +149,7 @@ export default function AddressBook() {
                       alt={c.nickname}
                       width={38}
                       height={38}
+                      unoptimized
                       className="rounded-full object-cover"
                     />
                   ) : (

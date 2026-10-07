@@ -50,7 +50,7 @@ useEffect(() => {
           localStorage.setItem("swarp_fd_user", JSON.stringify(user));
         } else {
           // if user not found, store it separately
-          localStorage.setItem("swarp_fd_referral_code", response.referralCode);
+          localStorage.setItem("swarp_fd_my_referral_code", response.referralCode);
         }
       }
     } catch (err) {

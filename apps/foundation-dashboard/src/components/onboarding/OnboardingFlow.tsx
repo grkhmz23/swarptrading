@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-// import { useRouter } from 'next/navigation'; // Not used currently
 
 import { SignUpEmailScreen } from './SignUpEmailScreen';
 import { VerifyPhone } from './VerifyPhone';
@@ -14,7 +13,10 @@ import { SetPasscode } from './SetPasscode';
 import { ConfirmPasscode } from './ConfirmPasscode';
 import { EnterPasscode } from './EnterPasscode';
 import ReferralCodeModal from './ReferralCodeModal';
-import { getAccessToken, setAccessToken } from '@/lib/session';
+import { decodeJwt, getAccessToken } from '@/lib/session';
+import { mergeJson, readJson } from '@/lib/storage';
+
+const PENDING_PROFILE_KEY = 'swarp_fd_pending_profile';
 
 type OnboardingStep = 'splash' | 'welcome' | 'signup-options' | 'signup-email' | 'verify-phone' | 'select-citizenship' | 'email-setup' | 'profile-setup' | 'profile-photo' | 'creating-wallet' | 'set-passcode' | 'confirm-passcode' | 'enter-passcode';
 
@@ -43,7 +45,6 @@ interface OnboardingFlowProps {
 }
 
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
-  // const router = useRouter(); // Not used currently
 
   const getInitialStep = (): OnboardingStep => {
     if (typeof window !== 'undefined') {
@@ -121,15 +122,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
         setCurrentStep('profile-setup');
         break;
       case 'profile-setup': {
-        try {
-          const raw = localStorage.getItem('swarp_fd_pending_profile');
-          const pending: PendingProfileData | null = raw ? JSON.parse(raw) : null;
-          if (pending?.email && pending.isGoogleLogin) {
-            setCurrentStep('select-citizenship');
-            break;
-          }
-        } catch (err) {
-          console.warn('Failed to parse pendingProfileData in handleBack', err);
+        const pending = readJson<PendingProfileData>(PENDING_PROFILE_KEY);
+        if (pending.email && pending.isGoogleLogin) {
+          setCurrentStep('select-citizenship');
+          break;
         }
         setCurrentStep('email-setup');
         break;
@@ -164,12 +160,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   const handleCitizenshipComplete = (country: string) => {
     // Persist selected country to the pending profile data so later screens
     // (profile-setup / profile-photo) can read it.
-    const existingData = localStorage.getItem('swarp_fd_pending_profile');
-    const mergedData = {
-      ...JSON.parse(existingData || '{}'),
-      country
-    };
-    localStorage.setItem('swarp_fd_pending_profile', JSON.stringify(mergedData));
+    const mergedData = mergeJson<PendingProfileData>(PENDING_PROFILE_KEY, { country });
 
     // If an email is already present (for example when user continued with Google),
     // skip the EmailSetup screen and go directly to profile setup.
@@ -182,24 +173,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
 
   const handleEmailSetupComplete = (emailData: { email: string }) => {
     // Merge with existing pending profile data
-    const existingData = localStorage.getItem('swarp_fd_pending_profile');
-    const mergedData: PendingProfileData = {
-      ...JSON.parse(existingData || '{}'),
-      ...emailData,
-      isGoogleLogin: false,
-    };
-    localStorage.setItem('swarp_fd_pending_profile', JSON.stringify(mergedData));
+    mergeJson<PendingProfileData>(PENDING_PROFILE_KEY, { ...emailData, isGoogleLogin: false });
     setCurrentStep('profile-setup');
   };
 
   const handleProfileSetupComplete = (profileData: { firstName: string; lastName: string }) => {
     // Merge with existing pending profile data
-    const existingData = localStorage.getItem('swarp_fd_pending_profile');
-    const mergedData = {
-      ...JSON.parse(existingData || '{}'),
-      ...profileData
-    };
-    localStorage.setItem('swarp_fd_pending_profile', JSON.stringify(mergedData));
+    mergeJson<PendingProfileData>(PENDING_PROFILE_KEY, profileData);
     setCurrentStep('profile-photo');
   };
 
@@ -256,12 +236,8 @@ const handleContinueWithGoogle = useCallback(
     if (isGoogleUserPayload(user) && typeof user.email === 'string') {
       email = user.email;
     } else {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1])) as GoogleTokenPayload;
-        email = typeof payload.email === 'string' ? payload.email : '';
-      } catch (error) {
-        console.error('Failed to decode Google token for email:', error);
-      }
+      const payload = decodeJwt(token) as GoogleTokenPayload | null;
+      email = typeof payload?.email === 'string' ? payload.email : '';
     }
 
     const existingDataRaw = localStorage.getItem('swarp_fd_pending_profile');
@@ -272,8 +248,8 @@ const handleContinueWithGoogle = useCallback(
       if (parsedData && typeof parsedData === 'object') {
         existingData = parsedData;
       }
-    } catch (error) {
-      console.warn('Invalid pendingProfileData, resetting.', error);
+    } catch {
+      // Corrupt pending profile: start from an empty one.
     }
 
     const mergedData = {
@@ -293,39 +269,6 @@ const handleContinueWithGoogle = useCallback(
   },
   [] // no external dependencies
 );
-
-useEffect(() => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const token = urlParams.get('token');
-  const email = urlParams.get('email');
-  const firstName = urlParams.get('firstName');
-  const lastName = urlParams.get('lastName');
-  const newUser = urlParams.get('newUser');
-
-  if (token && email) {
-
-    setAccessToken(token);
-
-    const userData = {
-      email,
-      firstName: firstName || '',
-      lastName: lastName || '',
-    };
-
-    localStorage.setItem('swarp_fd_user', JSON.stringify(userData));
-    localStorage.setItem('swarp_fd_pending_profile', JSON.stringify(userData));
-
-    const isNewUser = newUser === 'true';
-
-    window.history.replaceState({}, document.title, window.location.pathname);
-
-    handleContinueWithGoogle({
-      token,
-      isNewUser,
-      user: userData,
-    });
-  }
-}, [handleContinueWithGoogle]);
 
   switch (currentStep) {
     case 'signup-email':
@@ -369,9 +312,8 @@ useEffect(() => {
         />
       );
 
-    case 'profile-setup':
-      const profileSetupData = localStorage.getItem('swarp_fd_pending_profile');
-      const profileSetupProfile = profileSetupData ? JSON.parse(profileSetupData) : {};
+    case 'profile-setup': {
+      const profileSetupProfile = readJson<PendingProfileData>(PENDING_PROFILE_KEY);
       return (
         <ProfileSetup
           email={profileSetupProfile.email}
@@ -379,10 +321,10 @@ useEffect(() => {
           onComplete={handleProfileSetupComplete}
         />
       );
+    }
 
-    case 'profile-photo':
-      const profilePhotoData = localStorage.getItem('swarp_fd_pending_profile');
-      const photoProfile = profilePhotoData ? JSON.parse(profilePhotoData) : {};
+    case 'profile-photo': {
+      const photoProfile = readJson<PendingProfileData>(PENDING_PROFILE_KEY);
       return (
         <ProfilePhoto
           firstName={photoProfile.firstName}
@@ -392,6 +334,7 @@ useEffect(() => {
           onComplete={handleProfilePhotoComplete}
         />
       );
+    }
 
     case 'creating-wallet':
       return (

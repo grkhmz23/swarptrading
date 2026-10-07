@@ -51,9 +51,8 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
         // Cache the fetched translations with version
         translationsCache[locale] = { version: CACHE_VERSION, data: typedTranslations };
         setTranslations(typedTranslations);
-      } catch (error) {
-        console.warn(`Failed to fetch translations from backend for locale: ${locale}`, error);
-        // Keep empty translations - components use fallback strings
+      } catch {
+        // Backend unavailable: components fall back to their English strings.
         setTranslations(emptyTranslations);
       } finally {
         setIsLoading(false);
@@ -61,6 +60,10 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     };
 
     fetchTranslations();
+  }, [locale]);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
   }, [locale]);
 
   const value = useMemo(() => ({

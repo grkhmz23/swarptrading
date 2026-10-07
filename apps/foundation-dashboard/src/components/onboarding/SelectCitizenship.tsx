@@ -8,6 +8,7 @@ import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
 import { getAccessToken } from '@/lib/session';
+import { LegalNotice } from '../ui/LegalNotice';
 
 interface SelectCitizenshipProps {
   onBack?: () => void;
@@ -26,45 +27,40 @@ export const SelectCitizenship: React.FC<SelectCitizenshipProps> = ({
   const [userIdentifier, setUserIdentifier] = useState<{ phoneNumber?: string; email?: string }>({});
 
 useEffect(() => {
-  const storedPhoneNumber = localStorage.getItem('swarp_fd_pending_phone');
-  const storedUser = localStorage.getItem('swarp_fd_user');
-  const pendingProfileData = localStorage.getItem('swarp_fd_pending_profile');
+  // Clear leftovers from any earlier, abandoned onboarding before choosing an identifier.
+  localStorage.removeItem('swarp_fd_onboarding_step');
+  localStorage.removeItem('swarp_fd_user_has_pin');
+  localStorage.removeItem('swarp_fd_wallet');
 
-  // 1️⃣ First priority: Phone number flow
+  const parse = (raw: string | null): Record<string, unknown> | null => {
+    if (!raw) return null;
+    try {
+      const value = JSON.parse(raw);
+      return value && typeof value === 'object' ? value : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const storedPhoneNumber = localStorage.getItem('swarp_fd_pending_phone');
   if (storedPhoneNumber) {
     setUserIdentifier({ phoneNumber: storedPhoneNumber });
     return;
   }
 
-  // 2️⃣ Second: Google login (pendingProfileData)
-  if (pendingProfileData) {
-    try {
-      const data = JSON.parse(pendingProfileData);
-      if (data.email) {
-        setUserIdentifier({ email: data.email });
-        return;
-      }
-    } catch (e) {
-      console.error("Error parsing pendingProfileData:", e);
-    }
+  const pending = parse(localStorage.getItem('swarp_fd_pending_profile'));
+  if (typeof pending?.email === 'string' && pending.email) {
+    setUserIdentifier({ email: pending.email });
+    return;
   }
 
-  // 3️⃣ Third: stored user object
-  if (storedUser) {
-    try {
-      const user = JSON.parse(storedUser);
-      setUserIdentifier({
-        phoneNumber: user.phoneNumber,
-        email: user.email
-      });
-    } catch (e) {
-      console.error("Error parsing stored user:", e);
-    }
+  const user = parse(localStorage.getItem('swarp_fd_user'));
+  if (user) {
+    setUserIdentifier({
+      phoneNumber: typeof user.phoneNumber === 'string' ? user.phoneNumber : undefined,
+      email: typeof user.email === 'string' ? user.email : undefined,
+    });
   }
-
-  localStorage.removeItem('swarp_fd_onboarding_step');
-  localStorage.removeItem('swarp_fd_user_has_pin');
-  localStorage.removeItem('swarp_fd_wallet');
 }, []);
 
   useEffect(() => {
@@ -148,17 +144,16 @@ useEffect(() => {
 
   const handleApplyReferral = async (token: string) => {
     try {
-      const referralCode = localStorage.getItem('swarp_fd_referral_code') || '';
+      const referralCode = localStorage.getItem('swarp_fd_inviter_referral_code') || '';
       if (!referralCode || referralCode.trim() === '') {
         return;
       }
 
       const res = await apiService.applyReferral(token, referralCode);
-      // Optionally store referral info
       localStorage.setItem('swarp_fd_referral_applied', JSON.stringify(res));
-    } catch (err: unknown) {
-      console.error('Failed to apply referral:', err);
-      // Don't fail the flow if referral fails - continue with citizenship selection
+      localStorage.removeItem('swarp_fd_inviter_referral_code');
+    } catch {
+      // A bad referral code must not block onboarding.
     }
   };
 
@@ -168,27 +163,30 @@ useEffect(() => {
       return;
     }
 
+    const token = getAccessToken();
+    if (!token) {
+      setError(t.onboarding?.selectCitizenship?.errors?.userNotFound || 'Your session has expired. Please sign in again.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
 
     try {
-      const result = await apiService.updateCountry({
-        ...userIdentifier,
-        country: country.code
-      });
+      await apiService.updateCountry({ ...userIdentifier, country: country.code }, token);
 
-      const storedUser = localStorage.getItem('swarp_fd_user');
-      if (storedUser) {
-        const user = JSON.parse(storedUser);
-        user.country = country.code;
-        localStorage.setItem('swarp_fd_user', JSON.stringify(user));
+      try {
+        const storedUser = localStorage.getItem('swarp_fd_user');
+        if (storedUser) {
+          const user = JSON.parse(storedUser);
+          user.country = country.code;
+          localStorage.setItem('swarp_fd_user', JSON.stringify(user));
+        }
+      } catch {
+        localStorage.removeItem('swarp_fd_user');
       }
 
-      // Apply referral if token is available
-      const token = getAccessToken();
-      if (token) {
-        await handleApplyReferral(token);
-      }
+      await handleApplyReferral(token);
 
       if (onComplete) {
         onComplete(country.code);
@@ -196,7 +194,6 @@ useEffect(() => {
     } catch (error) {
       const apiError = error as ApiError;
       setError(apiError.message || t.onboarding?.selectCitizenship?.errors?.failedToUpdate || 'Failed to update country. Please try again.');
-      console.error('Country update failed:', error);
     } finally {
       setIsLoading(false);
     }
@@ -342,25 +339,7 @@ useEffect(() => {
         <div className='flex flex-col gap-2 justify-center items-center pb-4'>
           <div className='flex flex-col gap-4 justify-center items-center mt-4'>
             <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
-            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
-              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
-              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
-              </a>.
-            </p>
+            <LegalNotice />
             
           </div>
         </div>

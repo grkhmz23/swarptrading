@@ -83,7 +83,7 @@ async function handleSubmit(e?: React.FormEvent) {
     setMessage(res.message);
 
     if (res.valid) {
-      localStorage.setItem("swarp_fd_referral_code", trimmed);
+      localStorage.setItem("swarp_fd_inviter_referral_code", trimmed);
 
       // show success state on button
       setChecking(false);

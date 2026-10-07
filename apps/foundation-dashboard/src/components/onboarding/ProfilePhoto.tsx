@@ -7,6 +7,11 @@ import { apiService } from '../../services/api';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
 import { getAccessToken } from '@/lib/session';
+import { ApiError } from '@/lib/http';
+import { mergeJson } from '@/lib/storage';
+import { LegalNotice } from '../ui/LegalNotice';
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 interface ProfilePhotoProps {
   firstName?: string;
@@ -29,8 +34,12 @@ export const ProfilePhoto: React.FC<ProfilePhotoProps> = ({
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const token = typeof window !== 'undefined' ? getAccessToken() : null;
-  localStorage.removeItem('swarp_fd_login_method');
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    setToken(getAccessToken());
+    localStorage.removeItem('swarp_fd_login_method');
+  }, []);
 
   // Store refs for Enter key handler
   const isLoadingRef = useRef(isLoading);
@@ -51,8 +60,8 @@ export const ProfilePhoto: React.FC<ProfilePhotoProps> = ({
       try {
         const { url } = await apiService.getProfilePicture(token);
         if (url) setProfilePicturePreview(url);
-      } catch (err) {
-        console.warn('Failed to fetch profile picture', err);
+      } catch {
+        // No existing picture (or it could not be loaded): start empty.
       }
     };
     fetchProfilePicture();
@@ -61,7 +70,7 @@ export const ProfilePhoto: React.FC<ProfilePhotoProps> = ({
   const handlePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!file.type.startsWith('image/')) {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
         setError(t.onboarding?.profilePhoto?.errors?.invalidImage || 'Please upload a valid image file');
         return;
       }
@@ -84,8 +93,8 @@ export const ProfilePhoto: React.FC<ProfilePhotoProps> = ({
     setIsLoading(true);
     setError('');
     try {
-      const payload = { firstName, lastName, email, profilePictureUrl: undefined };
-      localStorage.setItem('swarp_fd_pending_profile', JSON.stringify(payload));
+      // Keep earlier onboarding answers (e.g. country) and only clear the picture.
+      mergeJson('swarp_fd_pending_profile', { firstName, lastName, email, profilePictureUrl: undefined });
       onComplete?.({ profilePictureUrl: undefined });
     } catch {
       setError('Failed to save profile data locally.');
@@ -95,11 +104,14 @@ export const ProfilePhoto: React.FC<ProfilePhotoProps> = ({
   };
 
 const handleSavePicture = async () => {
-  if (!token) {
+  const authToken = getAccessToken();
+  if (!authToken) {
     setError(t.onboarding?.profilePhoto?.errors?.authRequired || 'Authentication required.');
     return;
   }
-  if (!profilePictureFile) {
+  // Read through the ref: this also runs from the window keydown listener.
+  const file = profilePictureFileRef.current;
+  if (!file) {
     setError(t.onboarding?.profilePhoto?.errors?.noPicture || 'No picture selected.');
     return;
   }
@@ -109,13 +121,13 @@ const handleSavePicture = async () => {
 
   try {
     // Upload to backend S3
-    const uploadRes = await apiService.uploadProfilePicture(profilePictureFile, token);
+    const uploadRes = await apiService.uploadProfilePicture(file, authToken);
     const pictureKey = uploadRes.key;
 
     // Call onComplete
     onComplete?.({ profilePictureUrl: pictureKey });
   } catch (error) {
-    if (typeof error === 'object' && error !== null && 'status' in error && (error as { status?: number }).status === 413) {
+    if (error instanceof ApiError && error.statusCode === 413) {
       setError(t.onboarding?.profilePhoto?.errors?.fileSizeLimit || 'File size must be less than 1 MB. Please select a smaller image.');
     } else if (error instanceof Error) {
       setError(error.message);
@@ -231,7 +243,7 @@ const handleSavePicture = async () => {
             <input
               ref={fileInputRef}
               type='file'
-              accept='image/*'
+              accept='image/jpeg,image/png,image/webp'
               onChange={handlePictureChange}
               className='hidden'
             />
@@ -242,15 +254,7 @@ const handleSavePicture = async () => {
         <div className='flex flex-col gap-2 justify-center items-center pb-4'>
           <div className='flex flex-col gap-4 justify-center items-center mt-4'>
             <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
-            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
-              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
-              <a href="https://www.swarpfoundation.com/terms" target="_blank" rel="noopener noreferrer" className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'>
-                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
-              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
-              <a href="https://www.swarpfoundation.com/privacy" target="_blank" rel="noopener noreferrer" className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'>
-                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
-              </a>.
-            </p>
+            <LegalNotice />
           </div>
         </div>
       </div>

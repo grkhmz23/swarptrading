@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { apiService } from '@/services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
-import { getAccessToken, setAccessToken } from '@/lib/session';
+import { clearSession, getAccessToken, setAccessToken } from '@/lib/session';
+import { clearPinFailures, markSessionUnlocked, pinRetryDelayMs, recordPinFailure } from '@/lib/pinGate';
+import { ApiError, errorMessage } from '@/lib/http';
+import { CodeInput, emptyCode, type CodeInputHandle } from '../ui/CodeInput';
+import { LegalNotice } from '../ui/LegalNotice';
 
 interface EnterPasscodeProps {
   onBack?: () => void;
@@ -19,55 +23,48 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
   isDirectLogin = false
 }) => {
   const t = useT();
-  const [passcode, setPasscode] = useState(['', '', '', '', '', '']);
+  const [passcode, setPasscode] = useState<string[]>(emptyCode());
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [retryInSeconds, setRetryInSeconds] = useState(0);
+  const codeInputRef = useRef<CodeInputHandle>(null);
 
-  const handleCodeChange = (index: number, value: string) => {
-    if (value.length > 1) return;
-    
-    // Only allow digits
-    if (value && !/^\d$/.test(value)) return;
-    
-    const newCode = [...passcode];
-    newCode[index] = value;
-    setPasscode(newCode);
-    
-    // Clear error when user starts typing
-    if (error) setError('');
+  // Pick up a retry delay left over from earlier attempts in this tab.
+  useEffect(() => {
+    const remaining = Math.ceil(pinRetryDelayMs() / 1000);
+    if (remaining > 0) setRetryInSeconds(remaining);
+  }, []);
 
-    // Auto-focus next input
-    if (value && index < 5) {
-      const nextInput = document.querySelector(`input[data-index="${index + 1}"]`) as HTMLInputElement;
-      if (nextInput) nextInput.focus();
-    }
+  // Count down an active retry delay after repeated wrong PINs.
+  useEffect(() => {
+    if (retryInSeconds <= 0) return;
+    const id = setTimeout(() => setRetryInSeconds(Math.ceil(pinRetryDelayMs() / 1000)), 1000);
+    return () => clearTimeout(id);
+  }, [retryInSeconds]);
 
-    // Auto-verify when all digits are entered
-    if (value && newCode.every(digit => digit !== '')) {
-      const fullPasscode = newCode.join('');
-      verifyPasscode(fullPasscode);
-    }
-  };
-
-  const handleBackspace = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !passcode[index] && index > 0) {
-      const prevInput = document.querySelector(`input[data-index="${index - 1}"]`) as HTMLInputElement;
-      if (prevInput) prevInput.focus();
-    }
+  const fail = (message: string) => {
+    const state = recordPinFailure();
+    const wait = Math.ceil(Math.max(0, state.lockedUntil - Date.now()) / 1000);
+    setRetryInSeconds(wait);
+    setError(wait > 0 ? `${message} Too many attempts: try again in ${wait}s.` : message);
+    setPasscode(emptyCode());
+    codeInputRef.current?.focus();
   };
 
   const verifyPasscode = async (fullPasscode: string) => {
+    if (isLoading || pinRetryDelayMs() > 0) return;
+    if (!/^\d{6}$/.test(fullPasscode)) {
+      setError(t.onboarding?.enterPasscode?.errors?.pinFormat || 'PIN must be exactly 6 digits');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
-    
-    try {
-      if (!/^\d{6}$/.test(fullPasscode)) {
-        setError(t.onboarding?.enterPasscode?.errors?.pinFormat || 'PIN must be exactly 6 digits');
-        return;
-      }
+    const invalidMessage = t.onboarding?.enterPasscode?.errors?.invalid || 'Invalid passcode. Please try again.';
 
+    try {
       if (isDirectLogin) {
-        // Direct login flow - use phone number + passcode
+        // Returning user: phone number + passcode.
         const phoneNumber = localStorage.getItem('swarp_fd_pending_phone');
         if (!phoneNumber) {
           setError(t.onboarding?.enterPasscode?.errors?.phoneNotFound || 'Phone number not found');
@@ -75,68 +72,50 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
         }
 
         const result = await apiService.loginWithPasscode(phoneNumber, fullPasscode);
-        
-        // Store authentication data
         setAccessToken(result.token);
+        markSessionUnlocked(result.token);
         localStorage.setItem('swarp_fd_user', JSON.stringify(result.user));
-        
-        localStorage.removeItem('swarp_fd_login_method');
-        localStorage.removeItem('swarp_fd_pending_phone');
-        localStorage.removeItem('swarp_fd_user_id_passcode');
-        localStorage.removeItem('swarp_fd_is_new_user');
-        localStorage.removeItem('swarp_fd_requires_onboarding');
-         localStorage.removeItem('swarp_fd_pending_profile');
-          localStorage.removeItem('swarp_fd_profile_image');
-
+        localStorage.setItem('swarp_fd_onboarding_complete', 'true');
+        [
+          'swarp_fd_login_method',
+          'swarp_fd_pending_phone',
+          'swarp_fd_user_id_passcode',
+          'swarp_fd_is_new_user',
+          'swarp_fd_requires_onboarding',
+          'swarp_fd_pending_profile',
+          'swarp_fd_profile_image',
+        ].forEach((key) => localStorage.removeItem(key));
       } else {
-        // Existing wallet PIN verification flow (e.g. Google / social login)
+        // Signed in (OTP / Google / existing session): unlock the wallet with its PIN.
         const token = getAccessToken();
         if (!token) {
-          setError(t.onboarding?.enterPasscode?.errors?.tokenNotFound || 'Authentication token not found');
+          setError(t.onboarding?.enterPasscode?.errors?.tokenNotFound || 'Your session has expired. Please sign in again.');
           return;
         }
-
-        // 1) Verify the wallet PIN with backend
         await apiService.verifyWalletPIN(fullPasscode, token);
+        markSessionUnlocked(token);
+        localStorage.setItem('swarp_fd_onboarding_complete', 'true');
+      }
 
-        // 2) Ensure wallet data is available in localStorage so home screen can load
-        try {
-          const wallets = await apiService.getUserWallets(token);
-          if (Array.isArray(wallets) && wallets.length > 0) {
-            localStorage.setItem('swarp_fd_wallet', JSON.stringify(wallets[0]));
-          }
-        } catch (err) {
-          console.warn('Failed to load wallet after PIN verification:', err);
-          // Do not block login if wallet fetch fails; HomeScreen will handle errors
-        }
-      }
-      
-      // Success - proceed to next step
-      if (onComplete) {
-        onComplete();
-      }
+      clearPinFailures();
+      onComplete?.();
     } catch (error: unknown) {
-      const apiError = error as { message?: string };
-      const apiMessage = apiError.message || '';
-      // Translate known API error messages - check if message contains "Invalid passcode"
-      let errorMessage: string;
-      if (apiMessage.toLowerCase().includes('invalid passcode')) {
-        errorMessage = t.onboarding?.enterPasscode?.errors?.invalid || 'Invalid passcode. Please try again.';
+      const status = error instanceof ApiError ? error.statusCode : undefined;
+      if (status === 401 || status === 403 || status === 400) {
+        fail(invalidMessage);
       } else {
-        errorMessage = apiMessage || t.onboarding?.enterPasscode?.errors?.invalid || 'Invalid passcode. Please try again.';
+        setError(errorMessage(error, invalidMessage));
+        setPasscode(emptyCode());
       }
-      setError(errorMessage);
-      // Clear the passcode on error
-      setPasscode(['', '', '', '', '', '']);
-      // Focus first input
-      const firstInput = document.querySelector(`input[data-index="0"]`) as HTMLInputElement;
-      if (firstInput) firstInput.focus();
     } finally {
       setIsLoading(false);
     }
   };
 
-  // const isPasscodeComplete = passcode.every(digit => digit !== ''); // Not used currently
+  const signOutAndRestart = () => {
+    clearSession();
+    window.location.replace('/');
+  };
 
   return (
     <div 
@@ -184,26 +163,30 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
               </div>
             )}
             
-            {/* Passcode Input Fields */}
-            <div className='flex gap-3 justify-center w-full'>
-              {passcode.map((digit, index) => (
-                <input
-                  key={index}
-                  data-index={index}
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleCodeChange(index, e.target.value)}
-                  onKeyDown={(e) => handleBackspace(index, e)}
-                  disabled={isLoading}
-                  className={`w-12 h-12 text-center text-white text-xl font-semibold bg-[#131519] border rounded-xl focus:outline-none transition-colors ${
-                    error ? 'border-red-500' : 'border-[#2B2D30] focus:border-[#40E0D0]'
-                  }`}
-                />
-              ))}
-            </div>
-            
+            <CodeInput
+              ref={codeInputRef}
+              value={passcode}
+              onChange={(digits) => {
+                setPasscode(digits);
+                if (error && retryInSeconds <= 0) setError('');
+              }}
+              onComplete={verifyPasscode}
+              secret
+              autoFocus
+              disabled={isLoading || retryInSeconds > 0}
+              invalid={Boolean(error)}
+              ariaLabel={t.onboarding?.enterPasscode?.title || 'Enter your passcode'}
+              className='flex gap-3 justify-center w-full'
+            />
+
+            <button
+              type="button"
+              onClick={signOutAndRestart}
+              className="text-[#636466] text-sm underline hover:text-white transition-colors"
+            >
+              Use a different account
+            </button>
+
             {/* Loading indicator */}
             {isLoading && (
               <div className="text-[#40E0D0] text-sm text-center">
@@ -217,25 +200,7 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
          <div className='flex flex-col gap-2 justify-center items-center pb-4'>
           <div className='flex flex-col gap-4 justify-center items-center mt-4'>
             <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
-            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
-              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
-              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
-              </a>.
-            </p>
+            <LegalNotice />
             
           </div>
         </div>

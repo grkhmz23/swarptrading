@@ -2,6 +2,8 @@
 
   import React, { useEffect, useRef, useState } from "react";
   import { useT } from "@/i18n/I18nProvider";
+  import { isLikelySolanaAddress } from "@/lib/solana";
+  import { errorMessage } from "@/lib/http";
 
   type Props = {
     isOpen: boolean;
@@ -61,16 +63,27 @@
 async function handleSubmit(e?: React.FormEvent) {
   e?.preventDefault();
   setError(null);
-  if (!nickname.trim() || !address.trim()) {
+  const name = nickname.trim();
+  const target = address.trim();
+  if (!name || !target) {
     setError(t.modals?.addContact?.errors?.fillBothFields || 'Please fill both fields');
+    return;
+  }
+  if (name.length > 40) {
+    setError('Nickname must be 40 characters or fewer');
+    return;
+  }
+  // The second field takes either a Solana address or a SwarpPay username.
+  if (!isLikelySolanaAddress(target) && !/^@?[A-Za-z0-9_.]{3,30}$/.test(target)) {
+    setError('Enter a valid Solana address or username');
     return;
   }
 
   try {
     setLoading(true);
-    await onSubmit({ nickname: nickname.trim(), address: address.trim() });
-  } catch (err: unknown) { // ✅ changed from 'any'
-    let message = err instanceof Error ? err.message : (t.modals?.addContact?.errors?.failedToAdd || 'Failed to add contact');
+    await onSubmit({ nickname: name, address: target });
+  } catch (err: unknown) {
+    let message = errorMessage(err, t.modals?.addContact?.errors?.failedToAdd || 'Failed to add contact');
     // Translate known API error messages
     if (message === 'Username or wallet address not found') {
       message = t.modals?.addContact?.errors?.userNotFound || message;

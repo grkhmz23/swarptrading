@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { setUnauthorizedHandler } from "@/lib/http";
 import { clearSession, onSessionCleared } from "@/lib/session";
 import { resetSessionState, store } from "@/store";
+import { hydrateSettings, loadSavedSettings } from "@/store/slices/settingsSlice";
 
 /**
  * Wires session expiry for the whole app: when an authenticated request gets a
@@ -11,6 +12,10 @@ import { resetSessionState, store } from "@/store";
  * back to sign-in.
  */
 export function SessionManager() {
+  useEffect(() => {
+    store.dispatch(hydrateSettings(loadSavedSettings()));
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onSessionCleared(() => store.dispatch(resetSessionState()));
     setUnauthorizedHandler(() => {

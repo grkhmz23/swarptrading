@@ -24,7 +24,7 @@ import { moonPayService } from '@/services/moonpay';
 import { veriffService } from '@/services/veriff';
 import { isLikelySolanaAddress } from '@/lib/solana';
 import { balanceSyncService } from '@/services/balanceSync';
-import SettingsPage from "@/app/settings/page";
+import { SettingsContent } from "@/components/Setting/SettingsContent";
 import Image from 'next/image';
 import { SETTINGS_INNER_ITEMS_BASE } from "@/components/Setting/settingsItems";
 import { LAUNCHPAD_INNER_ITEMS } from "@/components/Launchpad/launchpadItems";
@@ -1787,7 +1787,7 @@ const handleNotificationClick = (notification: Notification) => {
   <StakingSection authToken={authToken} />
 ) : currentSection === "Settings" ? (
   <div className="p-7">
-    <SettingsPage />
+    <SettingsContent />
   </div>
 ) : currentSection === "Launchpad" ? (
   <div className="p-7">

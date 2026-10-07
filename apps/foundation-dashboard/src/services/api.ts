@@ -9,7 +9,6 @@ export interface ContinueFlowResponse {
   userId?: string;
   walletId?: string;
   walletAddress?: string;
-  otp?: string; // Development mode OTP
 }
 
 export interface VerifyOtpResponse {
@@ -97,13 +96,21 @@ class ApiService {
     });
   }
 
-  async updateCountry(data: {
-    phoneNumber?: string;
-    email?: string;
-    country: string;
-  }): Promise<{ message: string }> {
+  /**
+   * Save the user's citizenship. Sent with the session token so the backend can
+   * identify the user from the token rather than trusting the phone/email in the body.
+   */
+  async updateCountry(
+    data: {
+      phoneNumber?: string;
+      email?: string;
+      country: string;
+    },
+    token: string
+  ): Promise<{ message: string }> {
     return this.makeRequest<{ message: string }>('/auth/update-country', {
       method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify(data),
     });
   }
@@ -133,31 +140,27 @@ class ApiService {
   // Wallet PIN functionality
   async setWalletPIN(pin: string, token: string): Promise<{ message: string; success: boolean }> {
     
-    const requestBody = { pin };
-    const requestBodyString = JSON.stringify(requestBody);
-    
     return this.makeRequest('/auth/set-wallet-pin', {
       method: 'POST',
+      skipSessionExpiry: true,
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: requestBodyString,
+      body: JSON.stringify({ pin }),
     });
   }
 
   async verifyWalletPIN(pin: string, token: string): Promise<{ message: string; success: boolean }> {
     
-    const requestBody = { pin };
-    const requestBodyString = JSON.stringify(requestBody);
-    
     return this.makeRequest('/auth/verify-wallet-pin', {
       method: 'POST',
+      skipSessionExpiry: true,
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: requestBodyString,
+      body: JSON.stringify({ pin }),
     });
   }
 
@@ -701,6 +704,7 @@ async updatePasscode(
 ): Promise<{ message: string }> {
   return this.makeRequest('/auth/change-passcode', {
     method: 'POST',
+    skipSessionExpiry: true,
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',

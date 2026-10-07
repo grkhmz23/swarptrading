@@ -10,7 +10,14 @@ export const ACCESS_TOKEN_KEY = 'swarp_fd_access_token';
 const KEY_PREFIX = 'swarp_fd_';
 
 /** sessionStorage keys written during onboarding that must not outlive a session. */
-const SESSION_KEYS = ['swarp_fd_temp_passcode', 'lastOtp', 'otpTimestamp'];
+const SESSION_KEYS = [
+  'swarp_fd_temp_passcode',
+  'lastOtp',
+  'otpTimestamp',
+  'swarp_fd_pin_unlocked',
+  'swarp_fd_pin_failures',
+  'swarp_fd_oauth_pending',
+];
 
 export interface JwtPayload {
   sub?: string;

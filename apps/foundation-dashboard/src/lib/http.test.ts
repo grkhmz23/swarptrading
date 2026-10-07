@@ -3,7 +3,7 @@ import { ApiError, enc, errorMessage, query, request, setUnauthorizedHandler } f
 
 function mockFetch(status: number, body: unknown, contentType = "application/json") {
   const text = body === undefined ? "" : typeof body === "string" ? body : JSON.stringify(body);
-  const fn = vi.fn(async () => new Response(status === 204 ? null : text, { status, headers: { "content-type": contentType } }));
+  const fn = vi.fn(async (_url: string, _init?: RequestInit) => new Response(status === 204 ? null : text, { status, headers: { "content-type": contentType } }));
   vi.stubGlobal("fetch", fn);
   return fn;
 }
@@ -40,7 +40,7 @@ describe("request", () => {
 
   it("throws ApiError with the server message and status", async () => {
     mockFetch(400, { message: "Slippage exceeded", error: "Bad Request" });
-    const err = await request("/x").catch((e) => e);
+    const err = (await request("/x").catch((e: unknown) => e)) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("Slippage exceeded");
@@ -49,7 +49,7 @@ describe("request", () => {
 
   it("joins validation message arrays", async () => {
     mockFetch(400, { message: ["amount must be positive", "mint is required"] });
-    const err = await request("/x").catch((e) => e);
+    const err = (await request("/x").catch((e: unknown) => e)) as ApiError;
     expect(err.message).toBe("amount must be positive, mint is required");
   });
 
@@ -67,7 +67,7 @@ describe("request", () => {
 
   it("maps network failures to a status-0 ApiError", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Load failed"); }));
-    const err = await request("/x").catch((e) => e);
+    const err = (await request("/x").catch((e: unknown) => e)) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.statusCode).toBe(0);
   });

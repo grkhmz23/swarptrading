@@ -12,6 +12,8 @@ import  ReferralCodeModal  from './ReferralCodeModal';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
 import { setAccessToken } from '@/lib/session';
+import { beginOAuthSignIn, consumeOAuthCallback } from '@/lib/oauth';
+import { LegalNotice } from '../ui/LegalNotice';
 
 interface SignUpEmailScreenProps {
   onBack?: () => void;
@@ -32,52 +34,25 @@ export const SignUpEmailScreen: React.FC<SignUpEmailScreenProps> = ({
 
   const router = useRouter();
 
-    /** --------- Handle Google OAuth Redirect --------- */
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
-  const newUserParam = params.get('newUser');
-  const userParam = params.get('user');
+  /** Google OAuth redirect back to this page. */
+  useEffect(() => {
+    const result = consumeOAuthCallback(window.location.search);
+    if (result.kind === 'none') return;
+    if (result.kind === 'rejected') {
+      setPhoneError(result.reason);
+      return;
+    }
 
-  if (token) {
-    // Store token and login method
-    setAccessToken(token);
+    setAccessToken(result.token);
     localStorage.setItem('swarp_fd_login_method', 'google');
-
-    // Persist newUser flag if provided
-    let isNewUser: boolean | undefined = undefined;
-    if (newUserParam !== null) {
-      isNewUser = newUserParam === 'true' || newUserParam === '1';
-      localStorage.setItem('swarp_fd_is_new_user', String(isNewUser));
+    if (result.isNewUser !== undefined) {
+      localStorage.setItem('swarp_fd_is_new_user', String(result.isNewUser));
     }
-
-    // Persist user data if present
-    let userData: unknown = undefined;
-    if (userParam) {
-      try {
-        const decoded = decodeURIComponent(userParam);
-        userData = JSON.parse(decoded);
-        localStorage.setItem('swarp_fd_user', JSON.stringify(userData));
-      } catch (e) {
-        console.warn('Failed to parse user data from Google callback:', e);
-      }
+    if (result.user && typeof result.user === 'object') {
+      localStorage.setItem('swarp_fd_user', JSON.stringify(result.user));
     }
-
-    const url = new URL(window.location.href);
-    url.searchParams.delete('token');
-    url.searchParams.delete('newUser');
-    url.searchParams.delete('user');
-    window.history.replaceState({}, document.title, url.toString());
-
-    if (onContinueWithGoogle) {
-      onContinueWithGoogle({
-        token,
-        isNewUser,
-        user: userData,
-      });
-    }
-  }
-}, [router, onContinueWithGoogle]);
+    onContinueWithGoogle?.({ token: result.token, isNewUser: result.isNewUser, user: result.user });
+  }, [onContinueWithGoogle]);
 
   const handlePhoneChange = (value: string | undefined) => {
     // If value is provided, check if it's getting too long or malformed
@@ -145,17 +120,7 @@ useEffect(() => {
 
     try {
       const result = await apiService.continueWithPhone(phoneNumber);
-      
-      // Display OTP in browser console if returned (development mode)
-      if (result.otp) {
-        
-        // Store OTP in sessionStorage for mobile testing (development only)
-        if (process.env.NODE_ENV !== 'production') {
-          sessionStorage.setItem('lastOtp', result.otp);
-          sessionStorage.setItem('otpTimestamp', Date.now().toString());
-        }
-      }
-      
+
       // Store phone number for verification
       localStorage.setItem('swarp_fd_pending_phone', phoneNumber);
       localStorage.setItem('swarp_fd_is_new_user', result.isNewUser.toString());
@@ -185,15 +150,14 @@ useEffect(() => {
     } catch (error) {
       const apiError = error as ApiError;
       setPhoneError(apiError.message || 'Unable to process your request. Please try again.');
-      console.error('Phone verification error:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleContinueWithGoogle = () => {
-window.location.href = `${API_BASE_URL}/auth/google/callback`;
-
+    const state = beginOAuthSignIn();
+    window.location.assign(`${API_BASE_URL}/auth/google/callback?state=${encodeURIComponent(state)}`);
   };
 
   const isFormValid = phoneNumber && phoneNumber.trim() !== '' && isValidPhoneNumber(phoneNumber || '');
@@ -500,25 +464,7 @@ window.location.href = `${API_BASE_URL}/auth/google/callback`;
 
           <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
           <div className='flex justify-center items-center flex-col gap-4'>
-            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
-              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
-              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
-              </a>.
-            </p>
+            <LegalNotice />
           </div>
            
         </div>

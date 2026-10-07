@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { apiService } from '@/services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
-import { getAccessToken } from '@/lib/session';
+import { getAccessToken, isTokenExpired } from '@/lib/session';
 
 interface CreatingWalletProps {
   onComplete?: () => void;
@@ -25,13 +25,6 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
 
     const createWallet = async () => {
       try {
-        console.error('🔍 All localStorage items:', {
-          accessToken: getAccessToken() ? 'present' : 'missing',
-          isNewUser: localStorage.getItem('swarp_fd_is_new_user'),
-          pendingPhoneNumber: localStorage.getItem('swarp_fd_pending_phone'),
-          allKeys: Object.keys(localStorage)
-        });
-        
         const token = getAccessToken();
         
         if (!token) {
@@ -39,17 +32,9 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
           return;
         }
 
-        // Check if token is expired
-        try {
-          const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-          const currentTime = Math.floor(Date.now() / 1000);
-          
-          if (tokenPayload.exp && tokenPayload.exp < currentTime) {
-            setError(t.onboarding?.creatingWallet?.errors?.sessionExpired || 'Your session has expired. Please go back and verify your phone number again.');
-            return;
-          }
-        } catch (tokenError) {
-          console.error('Error parsing token:', tokenError);
+        if (isTokenExpired(token)) {
+          setError(t.onboarding?.creatingWallet?.errors?.sessionExpired || 'Your session has expired. Please go back and verify your phone number again.');
+          return;
         }
 
         // Check if this is a new user or existing user
@@ -63,8 +48,8 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
           try {
             const pinResult = await apiService.hasWalletPIN(token);
             hasPIN = pinResult.hasPIN;
-          } catch (error) {
-            console.warn('Could not check PIN status:', error);
+          } catch {
+            // Unknown PIN status: /set-passcode re-checks before letting the user choose one.
           }
         }
 
@@ -110,10 +95,8 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
           walletData.balance = initResult.balance;
           localStorage.setItem('swarp_fd_wallet', JSON.stringify(walletData));
           
-        } catch (initError) {
-          console.warn('⚠️ Wallet initialization on blockchain failed (wallet might already be initialized):', initError);
-          // Don't fail the entire flow if blockchain initialization fails
-          // This could mean the wallet is already initialized, which is fine
+        } catch {
+          // Initialization fails when the account already exists on-chain; that is fine.
         }
         
         localStorage.removeItem('swarp_fd_is_new_user');
