@@ -109,7 +109,8 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     const replaceParams = (template: string, params: Record<string, string>) => {
       let result = template;
       for (const [key, value] of Object.entries(params)) {
-        result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+        // Replacer function: values are inserted literally (no `$&` / `$1` expansion).
+        result = result.split(`{${key}}`).join(value);
       }
       return result;
     };
@@ -544,6 +545,15 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   };
 
   const handleClick = (n: Notification) => {
+    if (!n.isRead) {
+      const token = getAccessToken();
+      if (token) {
+        setNotifications((list) => list.map((item) => (item.id === n.id ? { ...item, isRead: true } : item)));
+        apiService.markNotificationAsRead(n.id, token).catch(() => {
+          // Still unread on the server; it will show as unread on the next load.
+        });
+      }
+    }
     onNotificationClick?.(n);
     onClose();
   };

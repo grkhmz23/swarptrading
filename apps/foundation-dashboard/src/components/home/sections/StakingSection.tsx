@@ -1,7 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '@/services/api';
+import { errorMessage, newIdempotencyKey } from '@/lib/http';
+import { floorToDecimals, isAmountInput, parseAmount } from '@/lib/amount';
+import { PinConfirmModal } from '@/components/ui/PinConfirmModal';
 
 interface StakingPool {
   id: string;
@@ -36,108 +39,156 @@ interface StakingSectionProps {
   authToken: string | null;
 }
 
-const FALLBACK_POOLS: StakingPool[] = [
-  { id: 'flexible', name: 'Flexible', lockDays: 30, apyPercent: 8, minStake: 100, maxStake: 1000000, totalStaked: 0 },
-  { id: 'growth', name: 'Growth', lockDays: 90, apyPercent: 15, minStake: 500, maxStake: 1000000, totalStaked: 0 },
-  { id: 'diamond', name: 'Diamond', lockDays: 180, apyPercent: 25, minStake: 1000, maxStake: 1000000, totalStaked: 0 },
-];
+const EMPTY_SUMMARY: StakingSummary = { totalStaked: 0, totalEarned: 0, activePositions: 0, availableBalance: 0 };
 
-const FALLBACK_SUMMARY: StakingSummary = { totalStaked: 0, totalEarned: 0, activePositions: 0, availableBalance: 0 };
+/** Number from an API field; strings like "12.5" are accepted, anything else is null. */
+function num(value: unknown): number | null {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
+function str(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
+}
+
+/** Map a pool from the API; pools without an id, lock period or APY are not shown. */
+function toPool(p: Record<string, unknown>): StakingPool | null {
+  const id = str(p.id);
+  const lockDays = num(p.lockDays);
+  const apy = num(p.apyPercent) ?? num(p.apyRate);
+  if (!id || lockDays === null || lockDays < 0 || apy === null) return null;
+  return {
+    id,
+    name: str(p.name) ?? id,
+    lockDays,
+    apyPercent: apy,
+    minStake: num(p.minStake) ?? 0,
+    maxStake: num(p.maxStake) ?? Number.POSITIVE_INFINITY,
+    totalStaked: num(p.totalStaked) ?? 0,
+  };
+}
 
 export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => {
-  const [pools, setPools] = useState<StakingPool[]>(FALLBACK_POOLS);
+  const [pools, setPools] = useState<StakingPool[]>([]);
   const [positions, setPositions] = useState<StakingPosition[]>([]);
-  const [summary, setSummary] = useState<StakingSummary>(FALLBACK_SUMMARY);
+  const [summary, setSummary] = useState<StakingSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [partialError, setPartialError] = useState<string | null>(null);
 
-  // Modal state
   const [selectedPool, setSelectedPool] = useState<StakingPool | null>(null);
   const [stakeAmount, setStakeAmount] = useState('');
   const [staking, setStaking] = useState(false);
   const [stakeError, setStakeError] = useState<string | null>(null);
   const [stakeSuccess, setStakeSuccess] = useState(false);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [pendingStake, setPendingStake] = useState<{ pool: StakingPool; amount: number; amountText: string } | null>(null);
+  const stakeKeyRef = useRef<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!authToken) { setLoading(false); return; }
+    if (!authToken) {
+      setLoading(false);
+      setError('Please sign in to view staking.');
+      return;
+    }
     setLoading(true);
     setError(null);
-    try {
-      const [poolsRes, positionsRes, summaryRes] = await Promise.allSettled([
-        apiService.getStakingPools(authToken),
-        apiService.getStakingPositions(authToken),
-        apiService.getStakingSummary(authToken),
-      ]);
+    setPartialError(null);
+    const [poolsRes, positionsRes, summaryRes] = await Promise.allSettled([
+      apiService.getStakingPools(authToken),
+      apiService.getStakingPositions(authToken),
+      apiService.getStakingSummary(authToken),
+    ]);
 
-      if (poolsRes.status === 'fulfilled' && Array.isArray(poolsRes.value)) {
-        setPools(poolsRes.value.map((p: Record<string, unknown>, i: number) => ({
-          id: (p.id as string) || `pool-${i}`,
-          name: (p.name as string) || 'Pool',
-          lockDays: (p.lockDays as number) || 30,
-          apyPercent: (p.apyPercent as number) || (p.apyRate as number) || 0,
-          minStake: (p.minStake as number) || 100,
-          maxStake: (p.maxStake as number) || 1000000,
-          totalStaked: (p.totalStaked as number) || 0,
-        })));
-      }
-      if (positionsRes.status === 'fulfilled' && Array.isArray(positionsRes.value)) {
-        setPositions(positionsRes.value.map((p: Record<string, unknown>) => ({
-          id: (p.id as string) || '',
-          poolId: (p.poolId as string) || '',
-          poolName: (p.poolName as string) || (p.tokenSymbol as string) || 'SWARP',
-          amount: (p.amount as number) || 0,
-          apyPercent: (p.apyPercent as number) || (p.apyRate as number) || 0,
-          earnedRewards: (p.earnedRewards as number) || 0,
-          startDate: (p.startDate as string) || '',
-          endDate: (p.endDate as string) || '',
-          status: ((p.status as string) || 'ACTIVE').toUpperCase() as 'ACTIVE' | 'COMPLETED' | 'WITHDRAWN',
-        })));
-      }
-      if (summaryRes.status === 'fulfilled' && summaryRes.value) {
-        const s = summaryRes.value as Record<string, unknown>;
-        setSummary({
-          totalStaked: (s.totalStaked as number) || 0,
-          totalEarned: (s.totalEarned as number) || 0,
-          activePositions: (s.activePositions as number) || 0,
-          availableBalance: (s.availableBalance as number) || 0,
-        });
-      }
-    } catch (err) {
-      console.error('Failed to load staking data:', err);
-      setError('Unable to load staking data.');
-    } finally {
-      setLoading(false);
+    if (poolsRes.status === 'fulfilled' && Array.isArray(poolsRes.value)) {
+      setPools(poolsRes.value.map((p: Record<string, unknown>) => toPool(p)).filter((p): p is StakingPool => p !== null));
+    } else {
+      setPools([]);
+      setError('Unable to load staking pools.');
     }
+
+    if (positionsRes.status === 'fulfilled' && Array.isArray(positionsRes.value)) {
+      setPositions(
+        positionsRes.value
+          .map((p: Record<string, unknown>) => ({
+            id: str(p.id) ?? '',
+            poolId: str(p.poolId) ?? '',
+            poolName: str(p.poolName) ?? str(p.tokenSymbol) ?? 'SWARP',
+            amount: num(p.amount) ?? 0,
+            apyPercent: num(p.apyPercent) ?? num(p.apyRate) ?? 0,
+            earnedRewards: num(p.earnedRewards) ?? 0,
+            startDate: str(p.startDate) ?? '',
+            endDate: str(p.endDate) ?? '',
+            status: (str(p.status) ?? 'ACTIVE').toUpperCase() as StakingPosition['status'],
+          }))
+          .filter((p) => p.id)
+      );
+    } else {
+      setPartialError('Your staking positions could not be loaded.');
+    }
+
+    if (summaryRes.status === 'fulfilled' && summaryRes.value) {
+      const s = summaryRes.value as Record<string, unknown>;
+      setSummary({
+        totalStaked: num(s.totalStaked) ?? 0,
+        totalEarned: num(s.totalEarned) ?? 0,
+        activePositions: num(s.activePositions) ?? 0,
+        availableBalance: num(s.availableBalance) ?? 0,
+      });
+    } else {
+      setPartialError('Your staking balance could not be loaded.');
+    }
+    setLoading(false);
   }, [authToken]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleStake = async () => {
-    if (!authToken || !selectedPool) return;
-    const amount = parseFloat(stakeAmount);
-    if (isNaN(amount) || amount <= 0) { setStakeError('Enter a valid amount.'); return; }
-    if (amount < selectedPool.minStake) { setStakeError(`Min ${(selectedPool.minStake ?? 0).toLocaleString()} SWARP`); return; }
-
-    setStaking(true);
+  /** Validate, then ask for the PIN. */
+  const handleStake = () => {
+    if (!authToken || !selectedPool || staking) return;
+    const parsed = parseAmount(stakeAmount, 9, summary.availableBalance);
+    if (!parsed.ok) { setStakeError(parsed.message); return; }
+    if (parsed.value < selectedPool.minStake) { setStakeError(`Min ${selectedPool.minStake.toLocaleString()} SWARP`); return; }
+    if (parsed.value > selectedPool.maxStake) { setStakeError(`Max ${selectedPool.maxStake.toLocaleString()} SWARP`); return; }
     setStakeError(null);
+    if (!stakeKeyRef.current) stakeKeyRef.current = newIdempotencyKey();
+    setPendingStake({ pool: selectedPool, amount: parsed.value, amountText: parsed.text });
+  };
+
+  const executeStake = async () => {
+    if (!authToken || !pendingStake || !stakeKeyRef.current) return;
+    setStaking(true);
     try {
-      await apiService.stakeTokens(authToken, { amount, lockDays: selectedPool.lockDays });
+      await apiService.stakeTokens(
+        authToken,
+        { amount: pendingStake.amount, lockDays: pendingStake.pool.lockDays, poolId: pendingStake.pool.id },
+        stakeKeyRef.current
+      );
+      stakeKeyRef.current = null;
+      setPendingStake(null);
       setStakeSuccess(true);
       setTimeout(() => { setSelectedPool(null); setStakeAmount(''); setStakeSuccess(false); fetchData(); }, 2000);
     } catch (err: unknown) {
-      setStakeError(err instanceof Error ? err.message : 'Staking failed.');
+      setStakeError(errorMessage(err, 'Staking failed.'));
+      throw err;
     } finally {
       setStaking(false);
     }
   };
 
   const handleWithdraw = async (positionId: string) => {
-    if (!authToken) return;
+    if (!authToken || withdrawingId) return;
     setWithdrawingId(positionId);
-    try { await apiService.withdrawStake(authToken, positionId); fetchData(); }
-    catch (err) { console.error('Withdraw failed:', err); }
-    finally { setWithdrawingId(null); }
+    setWithdrawError(null);
+    try {
+      await apiService.withdrawStake(authToken, positionId);
+      await fetchData();
+    } catch (err) {
+      setWithdrawError(errorMessage(err, 'Withdrawal failed. Please try again.'));
+    } finally {
+      setWithdrawingId(null);
+    }
   };
 
   const computeEstimates = (amount: number, apy: number, days: number) => {
@@ -177,7 +228,8 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
     );
   }
 
-  const parsedAmount = parseFloat(stakeAmount) || 0;
+  const parsedStake = parseAmount(stakeAmount, 9);
+  const parsedAmount = parsedStake.ok ? parsedStake.value : 0;
   const estimates = selectedPool ? computeEstimates(parsedAmount, selectedPool.apyPercent, selectedPool.lockDays) : null;
 
   return (
@@ -216,8 +268,19 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
           </div>
         </div>
 
+        {partialError && (
+          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl !p-3 !mb-4">
+            <p className="text-yellow-400 text-sm">{partialError}</p>
+          </div>
+        )}
+
         {/* Pool Cards */}
         <div className="!space-y-3 !mb-8">
+          {pools.length === 0 && (
+            <div className="bg-[#1A1B23] rounded-xl !p-6 text-center">
+              <p className="text-[#636466] text-sm">No staking pools are open right now.</p>
+            </div>
+          )}
           {pools.map((pool) => (
             <div
               key={pool.id}
@@ -233,7 +296,7 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
                 </div>
                 <div>
                   <p className="text-white text-sm font-semibold">{pool.name}</p>
-                  <p className="text-[#636466] text-xs">{pool.lockDays} days lock · Min {(pool.minStake ?? 0).toLocaleString()} SWARP</p>
+                  <p className="text-[#636466] text-xs">{pool.lockDays === 0 ? 'Flexible' : `${pool.lockDays} days lock`} · Min {(pool.minStake ?? 0).toLocaleString()} SWARP</p>
                 </div>
               </div>
               <div className="flex items-center !gap-4">
@@ -257,6 +320,11 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
           <h3 className="text-[16px] font-semibold text-white !mb-4" style={{ fontFamily: 'var(--font-heading)' }}>
             Your Positions
           </h3>
+          {withdrawError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl !p-3 !mb-4" role="alert">
+              <p className="text-red-400 text-sm">{withdrawError}</p>
+            </div>
+          )}
 
           {positions.length === 0 ? (
             <div className="bg-[#1A1B23] rounded-xl !p-8 text-center">
@@ -355,15 +423,17 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
               </div>
               <div className="relative">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   value={stakeAmount}
-                  onChange={(e) => { setStakeAmount(e.target.value); setStakeError(null); }}
+                  onChange={(e) => { if (isAmountInput(e.target.value)) { setStakeAmount(e.target.value); setStakeError(null); } }}
                   placeholder={`Min ${(selectedPool.minStake ?? 0).toLocaleString()}`}
                   disabled={staking || stakeSuccess}
                   className="w-full bg-[#090A11] border border-[#2B2D30] rounded-xl !px-4 !py-3 text-white placeholder-[#636466] focus:border-[#40E0D0] focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 <button
-                  onClick={() => setStakeAmount((summary.availableBalance ?? 0).toString())}
+                  onClick={() => setStakeAmount(floorToDecimals(summary.availableBalance ?? 0, 9))}
                   disabled={staking || stakeSuccess}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#40E0D0] text-xs font-bold"
                 >
@@ -415,7 +485,7 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
             {/* Button */}
             <button
               onClick={handleStake}
-              disabled={staking || stakeSuccess || !stakeAmount || parsedAmount > (summary.availableBalance ?? 0)}
+              disabled={staking || stakeSuccess || !parsedStake.ok || parsedAmount > (summary.availableBalance ?? 0)}
               className="w-full bg-[#40E0D0] text-[#090A11] font-semibold !py-3 rounded-xl hover:bg-[#40E0D0]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {staking ? (
@@ -423,11 +493,28 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-[#090A11] border-t-transparent" />
                   Confirming...
                 </span>
-              ) : stakeSuccess ? 'Done!' : 'Confirm Stake'}
+              ) : stakeSuccess ? 'Done!' : 'Review & Stake'}
             </button>
           </div>
         </div>
       )}
+      <PinConfirmModal
+        isOpen={pendingStake !== null}
+        title="Confirm stake"
+        confirmLabel="Stake"
+        summary={
+          pendingStake
+            ? [
+                { label: 'Amount', value: `${pendingStake.amountText} SWARP` },
+                { label: 'Pool', value: pendingStake.pool.name },
+                { label: 'Locked for', value: `${pendingStake.pool.lockDays} days` },
+                { label: 'APY', value: `${pendingStake.pool.apyPercent}%` },
+              ]
+            : []
+        }
+        onCancel={() => setPendingStake(null)}
+        onConfirmed={executeStake}
+      />
     </div>
   );
 };

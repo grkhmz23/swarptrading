@@ -3,7 +3,9 @@
 import React from 'react';
 import Image from 'next/image';
 import { WalletSidebar } from './WalletSidebar';
-import { WalletData, JupiterToken } from '@/types/home';
+import { WalletData, JupiterToken, WalletTokenBalance } from '@/types/home';
+import { WRAPPED_SOL_MINT } from '@/lib/solana';
+import { floorToDecimals } from '@/lib/amount';
 import type { TranslationKeys } from '@/i18n';
 
 interface UserState {
@@ -28,15 +30,15 @@ interface TokenPrices {
 interface WalletSectionProps {
   t: TranslationKeys;
   wallet: WalletData | null;
+  /** SPL token balances held by the wallet (SOL comes from `wallet.balance`). */
+  tokenBalances: WalletTokenBalance[];
   user: UserState;
   userProfile: UserProfile | null;
   jupiterTokens: JupiterToken[];
   jupiterTokensLoading: boolean;
   tokenPrices: TokenPrices;
   tokenPricesLoading: boolean;
-  mainnetBalance: number;
   portfolioValue?: number;
-  isBalanceSyncing: boolean;
   failedImages: Set<string>;
   setFailedImages: React.Dispatch<React.SetStateAction<Set<string>>>;
   // Handlers
@@ -44,9 +46,8 @@ interface WalletSectionProps {
   handleCopyAddress: () => void;
   handleOpenUsernameModal: () => void;
   handleCloseUsernameCard: () => void;
-  handleBalanceSync: () => void;
   handleTopUpClick: () => void;
-  handleMoonPaySell: () => void;
+  handleWithdraw: () => void;
   setShowSendModal: (show: boolean) => void;
   setShowReceiveModal: (show: boolean) => void;
   setShowSwapModal: (show: boolean) => void;
@@ -55,29 +56,36 @@ interface WalletSectionProps {
 export const WalletSection: React.FC<WalletSectionProps> = ({
   t,
   wallet,
+  tokenBalances,
   user,
   userProfile,
   jupiterTokens,
   jupiterTokensLoading,
   tokenPrices,
   tokenPricesLoading,
-  mainnetBalance,
   portfolioValue,
-  isBalanceSyncing,
   failedImages,
   setFailedImages,
   formatPublicKey,
   handleCopyAddress,
   handleOpenUsernameModal,
   handleCloseUsernameCard,
-  handleBalanceSync,
   handleTopUpClick,
-  handleMoonPaySell,
+  handleWithdraw,
   setShowSendModal,
   setShowReceiveModal,
   setShowSwapModal,
 }) => {
   const walletT = t.wallet as Record<string, string> | undefined;
+
+  const balanceByMint = new Map(tokenBalances.map((b) => [b.mint, b]));
+  const holdingOf = (token: JupiterToken): { balance: number; usdValue: number } => {
+    if (token.address === WRAPPED_SOL_MINT) return { balance: wallet?.balance ?? 0, usdValue: 0 };
+    const held = balanceByMint.get(token.address);
+    return { balance: Number(held?.balance ?? 0), usdValue: Number(held?.usdValue ?? 0) };
+  };
+  // Tokens the wallet holds come first.
+  const sortedTokens = [...jupiterTokens].sort((a, b) => Number(holdingOf(b).balance > 0) - Number(holdingOf(a).balance > 0));
 
   const formatPrice = (p: number | undefined) => {
     if (!p) return '0.00';
@@ -131,11 +139,13 @@ export const WalletSection: React.FC<WalletSectionProps> = ({
           ) : (
             /* Token Rows - All tokens from Jupiter API */
             <div className="divide-y divide-[#2B2D30] overflow-y-auto flex-1">
-              {jupiterTokens.map((token) => {
+              {sortedTokens.map((token) => {
                 // Use tokenPrices from API, fallback to token.usdPrice from Jupiter
                 const price = tokenPrices[token.symbol]?.price ?? token.usdPrice;
                 const priceChange = tokenPrices[token.symbol]?.priceChange24h ?? 0;
-                const isSOL = token.symbol === 'SOL';
+                const isSOL = token.address === WRAPPED_SOL_MINT;
+                const held = holdingOf(token);
+                const heldValue = held.usdValue > 0 ? held.usdValue : held.balance * (price || 0);
                 const isSWARP = token.symbol === 'SWARP' || token.symbol === 'SWRP';
                 const rawLogoURI = token.logoURI?.trim().replace(/[\s\x00-\x1F\x7F]/g, '');
                 const sanitizedLogoURI = rawLogoURI && (rawLogoURI.startsWith('http://') || rawLogoURI.startsWith('https://'))
@@ -182,15 +192,9 @@ export const WalletSection: React.FC<WalletSectionProps> = ({
                       </div>
                     </div>
                     <div>
-                      <p className="text-white font-medium">
-                        {isSOL && wallet
-                          ? `$${(wallet.balance * (price || 0)).toFixed(2)}`
-                          : '$0.00'}
-                      </p>
+                      <p className="text-white font-medium">${heldValue.toFixed(2)}</p>
                       <p className="text-[#636466] text-sm">
-                        {isSOL && wallet
-                          ? `${wallet.balance.toFixed(6)} ${token.symbol}`
-                          : `0.00 ${token.symbol}`}
+                        {floorToDecimals(held.balance, Math.min(token.decimals ?? 6, 6))} {token.symbol}
                       </p>
                     </div>
                     <div>
@@ -225,16 +229,13 @@ export const WalletSection: React.FC<WalletSectionProps> = ({
         wallet={wallet}
         user={user}
         userProfile={userProfile}
-        mainnetBalance={mainnetBalance}
         portfolioValue={portfolioValue}
-        isBalanceSyncing={isBalanceSyncing}
         formatPublicKey={formatPublicKey}
         handleCopyAddress={handleCopyAddress}
         handleOpenUsernameModal={handleOpenUsernameModal}
         handleCloseUsernameCard={handleCloseUsernameCard}
-        handleBalanceSync={handleBalanceSync}
         handleTopUpClick={handleTopUpClick}
-        handleMoonPaySell={handleMoonPaySell}
+        handleWithdraw={handleWithdraw}
         setShowSendModal={setShowSendModal}
         setShowReceiveModal={setShowReceiveModal}
         setShowSwapModal={setShowSwapModal}

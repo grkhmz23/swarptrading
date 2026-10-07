@@ -173,16 +173,7 @@ class ApiService {
     });
   }
 
-  // Airdrop devnet SOL for testing
-  async airdropSOL(walletId: string, token: string, amount: number = 2): Promise<{ message: string; txSignature: string; balance: number }> {
-    return this.makeRequest(`/wallet/${enc(walletId)}/airdrop`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ amount }),
-    });
-  }
+
 
   async initializeWallet(walletId: string, token: string): Promise<{ success: boolean; message: string; balance: number; signature: string; explorerUrl: string; walletUrl: string }> {
     return this.makeRequest(`/wallet/${enc(walletId)}/initialize`, {
@@ -194,24 +185,28 @@ class ApiService {
   }
 
   // Send SOL or SPL token transaction
-  async sendTransaction(walletId: string, token: string, data: { toAddress: string; amount: number; memo?: string; tokenMint?: string }): Promise<{ signature: string; fee?: number }> {
-
+  /**
+   * Send SOL (no `tokenMint`) or an SPL token. `idempotencyKey` must be the same
+   * for retries of one user action so the backend can refuse duplicates.
+   */
+  async sendTransaction(
+    walletId: string,
+    token: string,
+    data: { toAddress: string; amount: number; memo?: string; tokenMint?: string },
+    idempotencyKey: string
+  ): Promise<{ signature: string; fee?: number }> {
     const requestBody: { toAddress: string; amount: number; memo?: string; tokenMint?: string } = {
       toAddress: data.toAddress,
-      amount: Number(data.amount),
-      memo: data.memo
+      amount: data.amount,
     };
-
-    // Add tokenMint for SPL token transfers
-    if (data.tokenMint) {
-      requestBody.tokenMint = data.tokenMint;
-    }
+    if (data.memo) requestBody.memo = data.memo;
+    if (data.tokenMint) requestBody.tokenMint = data.tokenMint;
 
     return this.makeRequest(`/wallet/${enc(walletId)}/send-transaction`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(requestBody),
     });
@@ -377,31 +372,7 @@ class ApiService {
     });
   }
 
-  // MoonPay Balance Sync
-  async syncMoonPayBalance(walletId: string, token: string, amount: number, mainnetTxSignature?: string): Promise<{
-    success: boolean;
-    newBalance: number;
-    transaction?: {
-      id: string;
-      signature: string;
-      amount: number;
-      timestamp: string;
-    };
-  }> {
-    const requestBody = {
-      amount,
-      ...(mainnetTxSignature && { mainnetTxSignature })
-    };
 
-    return this.makeRequest(`/wallet/${enc(walletId)}/sync-moonpay-balance`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
-  }
 
   async getSwapQuote(
     walletId: string, 
@@ -409,6 +380,9 @@ class ApiService {
     data: {
       inputToken: string;
       outputToken: string;
+      /** Mint addresses of the tokens above; the backend should route by these. */
+      inputMint?: string;
+      outputMint?: string;
       amount: number;
       slippageTolerance?: number; // Percentage (e.g., 0.5 for 0.5%)
     }
@@ -438,15 +412,24 @@ class ApiService {
     });
   }
 
+  /**
+   * Execute a swap. Sends the slippage tolerance and the minimum output from
+   * the quote the user accepted, so the backend can reject a worse fill.
+   */
   async executeSwap(
     walletId: string,
     token: string,
     data: {
       inputToken: string;
       outputToken: string;
+      inputMint?: string;
+      outputMint?: string;
       amount: number;
-      pin?: string;
-    }
+      slippageTolerance: number;
+      minimumOutputAmount: number;
+      pin: string;
+    },
+    idempotencyKey: string
   ): Promise<{
     success: boolean;
     swapTransactionId: string;
@@ -454,12 +437,11 @@ class ApiService {
     actualOutputAmount?: number;
     error?: string;
   }> {
-
     return this.makeRequest(`/wallet/${enc(walletId)}/swap/execute`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(data),
     });
@@ -1912,15 +1894,21 @@ async buyLaunchpadTokensCustodial(
   projectId: string,
   solAmount: number,
   token: string,
-  slippageTolerance: number = 5
+  slippageTolerance: number,
+  idempotencyKey: string,
+  minimumOutputAmount?: number
 ): Promise<LaunchpadCustodialTradeResponse> {
   return this.makeRequest(`/launchpad/projects/${enc(projectId)}/custodial/buy`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': idempotencyKey,
     },
-    body: JSON.stringify({ solAmount, slippageTolerance }),
+    body: JSON.stringify({
+      solAmount,
+      slippageTolerance,
+      ...(minimumOutputAmount !== undefined ? { minimumOutputAmount } : {}),
+    }),
   });
 }
 
@@ -1929,15 +1917,21 @@ async sellLaunchpadTokensCustodial(
   projectId: string,
   tokenAmount: number,
   token: string,
-  slippageTolerance: number = 5
+  slippageTolerance: number,
+  idempotencyKey: string,
+  minimumOutputAmount?: number
 ): Promise<LaunchpadCustodialTradeResponse> {
   return this.makeRequest(`/launchpad/projects/${enc(projectId)}/custodial/sell`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': idempotencyKey,
     },
-    body: JSON.stringify({ tokenAmount, slippageTolerance }),
+    body: JSON.stringify({
+      tokenAmount,
+      slippageTolerance,
+      ...(minimumOutputAmount !== undefined ? { minimumOutputAmount } : {}),
+    }),
   });
 }
 
@@ -1999,12 +1993,12 @@ async getVeriffKycStatus(token: string): Promise<{
     });
   }
 
-  async stakeTokens(token: string, data: { amount: number; lockDays: number }) {
+  async stakeTokens(token: string, data: { amount: number; lockDays: number; poolId?: string }, idempotencyKey: string) {
     return this.makeRequest('/staking/stake', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify(data),
     });

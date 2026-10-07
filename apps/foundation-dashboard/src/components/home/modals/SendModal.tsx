@@ -7,6 +7,11 @@ import { useToast } from '@/hooks/useToast';
 import { useT } from '@/i18n/I18nProvider';
 import Image from 'next/image';
 import { getAccessToken } from '@/lib/session';
+import { ApiError, errorMessage, newIdempotencyKey } from '@/lib/http';
+import { floorToDecimals, isAmountInput, maxSpendable, parseAmount, SOL_FEE_RESERVE } from '@/lib/amount';
+import { isLikelySolanaAddress, normalizeMint } from '@/lib/solana';
+import { NETWORK_LABEL } from '@/config/env';
+import { PinConfirmModal } from '@/components/ui/PinConfirmModal';
 
 interface TokenBalance {
   token: string;
@@ -65,66 +70,57 @@ export const SendModal: React.FC<SendModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isValidatingAddress, setIsValidatingAddress] = useState(false);
   const [addressValidationMessage, setAddressValidationMessage] = useState<string | null>(null);
-  const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const validationSeqRef = useRef(0);
+  const submittingRef = useRef(false);
+  /** One key per prepared send; reused if the same send is retried after an ambiguous failure. */
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const [pendingSend, setPendingSend] = useState<{ toAddress: string; amount: number; amountText: string; memo?: string } | null>(null);
   const { toast, showSuccess, showError, hideToast } = useToast();
 
-  // Token selection state - dynamically populated from Jupiter API
   const [selectedToken, setSelectedToken] = useState<TokenBalance>({ ...SOL_TOKEN, balance: currentBalance });
   const [showTokenSelector, setShowTokenSelector] = useState(false);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [jupiterTokens, setJupiterTokens] = useState<JupiterToken[]>([]);
   const [isLoadingTokens, setIsLoadingTokens] = useState(false);
-
-  // Load tokens from Jupiter API (same as SwapModal)
-  const loadJupiterTokens = useCallback(async () => {
-    try {
-      const response = await apiService.getAllJupiterTokens({ limit: 500 });
-      setJupiterTokens(response.tokens);
-    } catch (err) {
-      console.error("Failed to fetch Jupiter tokens:", err);
-      // Fallback to basic tokens if API fails
-      setJupiterTokens([
-        // aislop-ignore-next-line ai-slop/hardcoded-id -- Canonical wrapped SOL mint address, not an environment-specific project identifier.
-        { address: 'So11111111111111111111111111111111111111112', symbol: 'SOL', name: 'Solana', decimals: 9, logoURI: SOL_TOKEN.logoURI },
-        { address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', symbol: 'USDC', name: 'USD Coin', decimals: 6 },
-        { address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', symbol: 'USDT', name: 'Tether', decimals: 6 },
-      ]);
-    }
-  }, []);
-
-  const loadTokenBalances = useCallback(async () => {
-    try {
-      const token = getAccessToken();
-      if (!token) return;
-
-      const balances = await apiService.getSwapTokenBalances(walletId, token);
-      const balanceArray = Array.isArray(balances) ? balances : [];
-      setTokenBalances(balanceArray);
-    } catch (error) {
-      console.error('Failed to load token balances:', error);
-    }
-  }, [walletId]);
+  const [tokensError, setTokensError] = useState<string | null>(null);
 
   const loadAllTokenData = useCallback(async () => {
+    const token = getAccessToken();
+    if (!token) return;
     setIsLoadingTokens(true);
-    await Promise.all([loadJupiterTokens(), loadTokenBalances()]);
-    setIsLoadingTokens(false);
-  }, [loadJupiterTokens, loadTokenBalances]);
-
-  useEffect(() => {
-    if (isOpen) {
-      loadAllTokenData();
-      // Reset form when modal opens - default to SOL
-      setSelectedToken({ ...SOL_TOKEN, balance: currentBalance });
-      setToAddress('');
-      setAmount('');
-      setMemo('');
-      setError(null);
-      setAddressValidationMessage(null);
+    setTokensError(null);
+    const [listResult, balanceResult] = await Promise.allSettled([
+      apiService.getAllJupiterTokens({ limit: 500 }),
+      apiService.getSwapTokenBalances(walletId, token),
+    ]);
+    if (listResult.status === 'fulfilled') setJupiterTokens(listResult.value.tokens);
+    if (balanceResult.status === 'fulfilled') {
+      setTokenBalances(Array.isArray(balanceResult.value) ? balanceResult.value : []);
+    } else {
+      setTokensError('Could not load token balances. Only SOL can be sent right now.');
     }
-  }, [isOpen, loadAllTokenData, currentBalance]);
+    setIsLoadingTokens(false);
+  }, [walletId]);
 
-  // Lock body scroll when modal is open
+  // Reset the form only when the modal opens, not on every balance refresh.
+  const balanceRef = useRef(currentBalance);
+  useEffect(() => {
+    balanceRef.current = currentBalance;
+  }, [currentBalance]);
+  useEffect(() => {
+    if (!isOpen) return;
+    loadAllTokenData();
+    setSelectedToken({ ...SOL_TOKEN, balance: balanceRef.current });
+    setToAddress('');
+    setAmount('');
+    setMemo('');
+    setError(null);
+    setAddressValidationMessage(null);
+    setPendingSend(null);
+    idempotencyKeyRef.current = null;
+  }, [isOpen, loadAllTokenData]);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -136,83 +132,86 @@ export const SendModal: React.FC<SendModalProps> = ({
     };
   }, [isOpen]);
 
-  // Build the list of available tokens from Jupiter API merged with user balances
+  useEffect(() => {
+    return () => {
+      if (validationTimeoutRef.current) clearTimeout(validationTimeoutRef.current);
+    };
+  }, []);
+
+  /**
+   * Tokens the user can pick, keyed by mint. Native SOL has an empty mint;
+   * wrapped SOL from the token list is folded into it so choosing "SOL" always
+   * sends native SOL.
+   */
   const availableTokens = React.useMemo(() => {
-    // Create a map of user's token balances by mint address for quick lookup
-    const balanceMap = new Map<string, TokenBalance>();
-    tokenBalances.forEach(tb => {
-      balanceMap.set(tb.mint, tb);
+    const balanceByMint = new Map<string, TokenBalance>();
+    tokenBalances.forEach((tb) => {
+      const mint = normalizeMint(tb.mint);
+      if (mint) balanceByMint.set(mint, tb);
     });
 
-    // Convert Jupiter tokens to TokenBalance format, merging with user balances
-    const tokens: TokenBalance[] = jupiterTokens.map(jt => {
-      const userBalance = balanceMap.get(jt.address);
-      return {
+    const tokens: TokenBalance[] = [{ ...SOL_TOKEN, balance: currentBalance }];
+    const seen = new Set<string>();
+    jupiterTokens.forEach((jt) => {
+      const mint = normalizeMint(jt.address);
+      if (!mint || seen.has(mint)) return;
+      seen.add(mint);
+      const userBalance = balanceByMint.get(mint);
+      tokens.push({
         token: jt.symbol,
         symbol: jt.symbol,
         name: jt.name,
-        balance: userBalance?.balance || 0,
-        usdValue: userBalance?.usdValue || 0,
-        mint: jt.address,
+        balance: userBalance?.balance ?? 0,
+        usdValue: userBalance?.usdValue ?? 0,
+        mint,
         decimals: jt.decimals,
-        logoURI: jt.logoURI?.trim().replace(/[\s\x00-\x1F\x7F]/g, ''), // Remove whitespace/control chars from logo URLs
-      };
+        logoURI: jt.logoURI?.trim().replace(/[\s\x00-\x1F\x7F]/g, ''),
+      });
+    });
+    // Held tokens that are not in the list still need to be sendable.
+    balanceByMint.forEach((tb, mint) => {
+      if (!seen.has(mint)) tokens.push({ ...tb, mint });
     });
 
-    // If Jupiter tokens are empty (loading or failed), at least show SOL with current balance
-    if (tokens.length === 0) {
-      return [{ ...SOL_TOKEN, balance: currentBalance }];
-    }
-
-    const solToken = tokens.find(t => t.symbol === 'SOL');
-    if (solToken) {
-      solToken.balance = currentBalance;
-    }
-
-    // Sort: tokens with balance first, then alphabetically
-    tokens.sort((a, b) => {
-      // SOL always first
-      if (a.symbol === 'SOL') return -1;
-      if (b.symbol === 'SOL') return 1;
-      // Then by balance (tokens with balance first)
+    const [sol, ...rest] = tokens;
+    rest.sort((a, b) => {
       if (a.balance > 0 && b.balance === 0) return -1;
       if (a.balance === 0 && b.balance > 0) return 1;
-      // Then alphabetically
       return a.symbol.localeCompare(b.symbol);
     });
-
-    return tokens;
+    return [sol, ...rest];
   }, [jupiterTokens, tokenBalances, currentBalance]);
 
+  const isNativeSol = !selectedToken.mint;
+
   const getSelectedTokenBalance = () => {
-    if (selectedToken.symbol === 'SOL') {
-      return currentBalance;
-    }
-    const tokenBalance = tokenBalances.find(tb => tb.symbol === selectedToken.symbol);
-    return tokenBalance?.balance || 0;
+    if (isNativeSol) return currentBalance;
+    return availableTokens.find((tb) => tb.mint === selectedToken.mint)?.balance ?? 0;
   };
 
-  const validateAddress = async (address: string) => {
-    if (!address.trim()) {
+  const validateAddress = async (address: string): Promise<boolean> => {
+    const trimmed = address.trim();
+    if (!trimmed) {
       setAddressValidationMessage(null);
-      return;
+      return false;
+    }
+    if (!isLikelySolanaAddress(trimmed)) {
+      setAddressValidationMessage(t.modals?.send?.errors?.invalidAddress || 'Invalid Solana address');
+      return false;
     }
 
+    const seq = ++validationSeqRef.current;
     setIsValidatingAddress(true);
     setAddressValidationMessage(null);
-
     try {
       const token = getAccessToken();
       if (!token) {
         setAddressValidationMessage(t.modals?.send?.errors?.authRequired || 'Authentication required');
         return false;
       }
-
-      const result = await apiService.validateSolanaAddress(address.trim(), token);
-
-      // Only show message for invalid addresses
+      const result = await apiService.validateSolanaAddress(trimmed, token);
+      if (seq !== validationSeqRef.current) return result.valid;
       if (!result.valid) {
-        // Translate known API error messages
         let message = result.message;
         if (message === 'Invalid recipient address' || message === 'Invalid Solana address') {
           message = t.modals?.send?.errors?.invalidAddress || message;
@@ -221,132 +220,143 @@ export const SendModal: React.FC<SendModalProps> = ({
       } else {
         setAddressValidationMessage(null);
       }
-
       return result.valid;
-    } catch (error: unknown) {
-      console.error('Address validation error:', error);
-      const apiError = error as { statusCode?: number };
-      if (apiError.statusCode === 401) {
-        setAddressValidationMessage(t.modals?.send?.errors?.authExpired || 'Authentication expired');
-      } else {
+    } catch {
+      if (seq === validationSeqRef.current) {
         setAddressValidationMessage(t.modals?.send?.errors?.unableToValidate || 'Unable to validate address');
       }
       return false;
     } finally {
-      setIsValidatingAddress(false);
+      if (seq === validationSeqRef.current) setIsValidatingAddress(false);
     }
   };
 
   const handleAddressChange = (address: string) => {
     setToAddress(address);
     setError(null);
-
-    // Clear previous timeout
-    if (validationTimeoutRef.current) {
-      clearTimeout(validationTimeoutRef.current);
-    }
-
-    // Clear validation message while typing
     setAddressValidationMessage(null);
-
-    // Debounce validation - only validate after user stops typing for 500ms
+    if (validationTimeoutRef.current) clearTimeout(validationTimeoutRef.current);
     if (address.trim()) {
-      validationTimeoutRef.current = setTimeout(async () => {
-        await validateAddress(address);
+      validationTimeoutRef.current = setTimeout(() => {
+        validateAddress(address);
       }, 500);
     }
   };
 
+  /** Step 1: validate everything, then ask for the PIN. */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || isLoading) return;
+    submittingRef.current = true;
+    setIsLoading(true);
     setError(null);
 
-    if (!toAddress.trim()) {
-      setError(t.modals?.send?.errors?.recipientRequired || 'Recipient address is required');
-      return;
-    }
-
-    const isAddressValid = await validateAddress(toAddress);
-    if (!isAddressValid) {
-      setError(t.modals?.send?.errors?.invalidAddress || 'Please enter a valid Solana wallet address');
-      return;
-    }
-
-    // Prevent sending to self
-    if (toAddress.trim() === currentWalletAddress) {
-      setError(t.modals?.send?.errors?.cannotSendToSelf || 'Cannot send to your own wallet address');
-      return;
-    }
-
-    const amountNum = parseFloat(amount);
-    if (!amount || isNaN(amountNum) || amountNum <= 0) {
-      setError(t.modals?.send?.errors?.invalidAmount || 'Please enter a valid amount');
-      return;
-    }
-
-    const availableBalance = getSelectedTokenBalance();
-    if (amountNum > availableBalance) {
-      setError(t.modals?.send?.errors?.insufficientBalance || 'Insufficient balance');
-      return;
-    }
-
     try {
-      setIsLoading(true);
-      const token = getAccessToken();
-      if (!token) {
-        setError(t.modals?.send?.errors?.tokenNotFound || 'Authentication token not found');
+      const recipient = toAddress.trim();
+      if (!recipient) {
+        setError(t.modals?.send?.errors?.recipientRequired || 'Recipient address is required');
+        return;
+      }
+      if (recipient === currentWalletAddress) {
+        setError(t.modals?.send?.errors?.cannotSendToSelf || 'Cannot send to your own wallet address');
         return;
       }
 
-      const result = await apiService.sendTransaction(walletId, token, {
-        toAddress: toAddress.trim(),
-        amount: amountNum,
-        memo: memo.trim() || undefined,
-        tokenMint: selectedToken.mint || undefined, // Only include for SPL tokens
-      });
-
-      const successMessage = (t.modals?.send?.success?.transactionSent || `Transaction sent successfully! {amount} {token} sent to recipient.`)
-        .replace('{amount}', amountNum.toString())
-        .replace('{token}', selectedToken.symbol);
-      showSuccess(successMessage);
-
-      // Update balance (subtract sent amount and fee) - only for SOL
-      if (selectedToken.symbol === 'SOL') {
-        const newBalance = currentBalance - amountNum - (result.fee || 0);
-        onSuccess(newBalance);
-      } else {
-        // For SPL tokens, just trigger refresh
-        onSuccess(currentBalance);
+      const balance = getSelectedTokenBalance();
+      const spendable = isNativeSol ? Math.max(0, balance - SOL_FEE_RESERVE) : balance;
+      const parsed = parseAmount(amount, selectedToken.decimals, spendable);
+      if (!parsed.ok) {
+        setError(
+          parsed.problem === 'insufficient' && isNativeSol
+            ? `Insufficient balance. Keep at least ${SOL_FEE_RESERVE} SOL for network fees.`
+            : parsed.message
+        );
+        return;
       }
 
-      // Reset form
-      setToAddress('');
-      setAmount('');
-      setMemo('');
+      if (!(await validateAddress(recipient))) {
+        setError(t.modals?.send?.errors?.invalidAddress || 'Please enter a valid Solana wallet address');
+        return;
+      }
 
-      // Close modal immediately
-      onClose();
-    } catch (error: unknown) {
-      console.error('Send transaction error:', error);
-      const apiError = error as { message?: string };
-      const errorMessage = apiError.message || t.modals?.send?.errors?.failedToSend || 'Failed to send transaction';
-      setError(errorMessage);
-      showError(errorMessage);
+      const prepared = { toAddress: recipient, amount: parsed.value, amountText: parsed.text, memo: memo.trim() || undefined };
+      const same =
+        pendingSend &&
+        pendingSend.toAddress === prepared.toAddress &&
+        pendingSend.amountText === prepared.amountText &&
+        pendingSend.memo === prepared.memo;
+      if (!same || !idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey();
+      setPendingSend(prepared);
     } finally {
+      submittingRef.current = false;
       setIsLoading(false);
     }
+  };
+
+  /** Step 2: PIN verified; send exactly what was reviewed. */
+  const executeSend = async () => {
+    if (!pendingSend || !idempotencyKeyRef.current) return;
+    const token = getAccessToken();
+    if (!token) throw new Error(t.modals?.send?.errors?.tokenNotFound || 'Your session has expired. Please sign in again.');
+
+    try {
+      await apiService.sendTransaction(
+        walletId,
+        token,
+        {
+          toAddress: pendingSend.toAddress,
+          amount: pendingSend.amount,
+          memo: pendingSend.memo,
+          tokenMint: selectedToken.mint || undefined,
+        },
+        idempotencyKeyRef.current
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.statusCode === 0) {
+        // The request may have reached the server. Keep the same idempotency key so a
+        // retry cannot send twice, and tell the user to check history first.
+        throw new Error('Network error: the transfer may or may not have been sent. Check your transaction history before retrying.');
+      }
+      throw err;
+    }
+
+    idempotencyKeyRef.current = null;
+    const successMessage = (t.modals?.send?.success?.transactionSent || 'Transaction sent successfully! {amount} {token} sent to recipient.')
+      .replace('{amount}', pendingSend.amountText)
+      .replace('{token}', selectedToken.symbol);
+    showSuccess(successMessage);
+
+    // Ask the server for the new balance instead of guessing it locally.
+    let freshBalance = currentBalance;
+    try {
+      const wallets = await apiService.getUserWallets(token);
+      const wallet = wallets.find((w) => w.id === walletId) ?? wallets[0];
+      if (wallet && Number.isFinite(Number(wallet.balance))) freshBalance = Number(wallet.balance);
+    } catch {
+      // The dashboard refreshes the wallet on its own interval.
+    }
+    onSuccess(freshBalance);
+
+    setPendingSend(null);
+    setToAddress('');
+    setAmount('');
+    setMemo('');
+    onClose();
   };
 
   const handleTokenSelect = (token: TokenBalance) => {
     setSelectedToken(token);
     setShowTokenSelector(false);
-    setAmount(''); // Reset amount when token changes
+    setAmount('');
+    setError(null);
   };
 
-  const formatBalance = (balance: number, decimals: number) => {
-    const maxDecimals = Math.min(decimals, 6);
-    return balance.toFixed(maxDecimals);
+  const handleMax = () => {
+    setAmount(maxSpendable(getSelectedTokenBalance(), selectedToken.decimals, isNativeSol));
+    setError(null);
   };
+
+  const formatBalance = (balance: number, decimals: number) => floorToDecimals(balance, Math.min(decimals, 6)) || '0';
 
   return (
     <>
@@ -421,11 +431,11 @@ export const SendModal: React.FC<SendModalProps> = ({
                     ) : (
                       availableTokens.map((token) => (
                         <button
-                          key={token.mint || token.symbol}
+                          key={token.mint || 'native-sol'}
                           type="button"
                           onClick={() => handleTokenSelect(token)}
                           className={`w-full !px-4 !py-3 flex items-center justify-between hover:bg-[#1A1B23] transition-colors ${
-                            selectedToken.symbol === token.symbol ? 'bg-[#1A1B23]' : ''
+                            selectedToken.mint === token.mint ? 'bg-[#1A1B23]' : ''
                           }`}
                         >
                           <div className="flex items-center !gap-3">
@@ -463,10 +473,17 @@ export const SendModal: React.FC<SendModalProps> = ({
 
             {/* Balance Info */}
             <div className="bg-[#090A11] rounded-2xl !p-4 !mb-6">
-              <p className="text-[#636466] text-sm">{t.modals?.send?.availableBalance || "Available Balance"}</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[#636466] text-sm">{t.modals?.send?.availableBalance || "Available Balance"}</p>
+                <span className="text-[10px] uppercase tracking-wide rounded-full bg-[#2B2D30] text-[#40E0D0] !px-2 !py-0.5">{NETWORK_LABEL}</span>
+              </div>
               <p className="text-white text-lg font-semibold">
                 {isLoadingTokens ? '...' : formatBalance(getSelectedTokenBalance(), selectedToken.decimals)} {selectedToken.symbol}
               </p>
+              {tokensError && <p className="text-yellow-400 text-xs !mt-2">{tokensError}</p>}
+              {selectedToken.mint && (
+                <p className="text-[#636466] text-xs !mt-2 break-all">Mint: {selectedToken.mint}</p>
+              )}
             </div>
 
             {/* Form */}
@@ -508,15 +525,31 @@ export const SendModal: React.FC<SendModalProps> = ({
                 <label className="block text-white text-sm font-medium !mb-2">
                   {(t.modals?.send?.amount || "Amount ({token})").replace('{token}', selectedToken.symbol)}
                 </label>
-                <input
-                  type="number"
-                  step={selectedToken.decimals >= 6 ? "0.000001" : "0.01"}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.000000"
-                  className="w-full bg-[#090A11] border border-[#2B2D30] rounded-xl !px-4 !py-3 text-white placeholder-[#636466] focus:border-[#40E0D0] focus:outline-none"
-                  disabled={isLoading}
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={amount}
+                    onChange={(e) => {
+                      if (isAmountInput(e.target.value)) {
+                        setAmount(e.target.value);
+                        setError(null);
+                      }
+                    }}
+                    placeholder="0.00"
+                    className="w-full bg-[#090A11] border border-[#2B2D30] rounded-xl !pl-4 !pr-16 !py-3 text-white placeholder-[#636466] focus:border-[#40E0D0] focus:outline-none"
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleMax}
+                    disabled={isLoading}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#40E0D0] text-xs font-semibold"
+                  >
+                    MAX
+                  </button>
+                </div>
               </div>
 
               {/* Memo (Optional) */}
@@ -527,7 +560,8 @@ export const SendModal: React.FC<SendModalProps> = ({
                 <input
                   type="text"
                   value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
+                  onChange={(e) => setMemo(e.target.value.slice(0, 120))}
+                  maxLength={120}
                   placeholder={t.modals?.send?.addNote || "Add a note..."}
                   className="w-full bg-[#090A11] border border-[#2B2D30] rounded-xl !px-4 !py-3 text-white placeholder-[#636466] focus:border-[#40E0D0] focus:outline-none"
                   disabled={isLoading}
@@ -547,12 +581,37 @@ export const SendModal: React.FC<SendModalProps> = ({
                 disabled={isLoading}
                 className="w-full bg-[#40E0D0] text-black font-semibold !py-3 rounded-xl hover:bg-[#40E0D0]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? (t.modals?.send?.sending || 'Sending...') : (t.modals?.send?.sendTransaction || 'Send Transaction')}
+                {isLoading ? (t.modals?.send?.sending || 'Checking...') : (t.modals?.send?.sendTransaction || 'Review & Send')}
               </button>
             </form>
           </div>
         </div>
       )}
+
+      <PinConfirmModal
+        isOpen={isOpen && pendingSend !== null}
+        title="Confirm transfer"
+        confirmLabel="Send"
+        summary={
+          pendingSend
+            ? [
+                { label: 'Amount', value: `${pendingSend.amountText} ${selectedToken.symbol}` },
+                { label: 'To', value: pendingSend.toAddress },
+                { label: 'Network', value: NETWORK_LABEL },
+                ...(pendingSend.memo ? [{ label: 'Memo', value: pendingSend.memo }] : []),
+              ]
+            : []
+        }
+        onCancel={() => setPendingSend(null)}
+        onConfirmed={async () => {
+          try {
+            await executeSend();
+          } catch (err) {
+            showError(errorMessage(err, t.modals?.send?.errors?.failedToSend || 'Failed to send transaction'));
+            throw err;
+          }
+        }}
+      />
 
       {/* Toast Notification */}
       <Toast

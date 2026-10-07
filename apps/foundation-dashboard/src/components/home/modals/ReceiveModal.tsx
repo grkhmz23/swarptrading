@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import Immage from 'next/image';
 import { useT } from '@/i18n/I18nProvider';
+import { IS_MAINNET, NETWORK_LABEL } from '@/config/env';
 
 interface ReceiveModalProps {
   walletAddress: string;
@@ -41,7 +42,7 @@ export const ReceiveModal: React.FC<ReceiveModalProps> = ({
 
         // Generate QR code matrix data
         const QRCodeLib = (await import('qrcode')).default;
-        const qrMatrix = QRCodeLib.create(walletAddress, { errorCorrectionLevel: 'M' });
+        const qrMatrix = QRCodeLib.create(walletAddress, { errorCorrectionLevel: 'H' });
         const modules = qrMatrix.modules;
         const moduleCount = modules.size;
         const qrSize = 550; // Much larger QR area, only 25px padding on each side
@@ -127,7 +128,7 @@ export const ReceiveModal: React.FC<ReceiveModalProps> = ({
               dark: '#000000',
               light: '#FFFFFF'
             },
-            errorCorrectionLevel: 'M'
+            errorCorrectionLevel: 'H'
           });
           setQrCodeDataURL(fallbackQR);
         } catch (fallbackError) {
@@ -165,6 +166,12 @@ export const ReceiveModal: React.FC<ReceiveModalProps> = ({
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
+        </div>
+
+        <div className={`rounded-xl !px-4 !py-3 !mb-4 text-sm ${IS_MAINNET ? 'bg-[#40E0D0]/10 text-[#40E0D0]' : 'bg-yellow-500/10 text-yellow-300'}`} role="note">
+          {IS_MAINNET
+            ? 'Only send Solana (SOL or SPL tokens) on Solana mainnet to this address.'
+            : `This wallet runs on Solana ${NETWORK_LABEL}. Funds sent from mainnet will not appear here.`}
         </div>
 
         {/* QR Code */}

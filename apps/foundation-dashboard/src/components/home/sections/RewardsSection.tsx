@@ -41,18 +41,15 @@ interface RewardsSectionProps {
   loadingYourRewards: boolean;
   loadingMoreRewards: boolean;
   claiming: string | null;
-  mainnetBalance: number;
   portfolioValue?: number;
-  isBalanceSyncing: boolean;
   // Handlers
   formatPublicKey: (key: string | null | undefined) => string;
   handleClaim: (rewardType: string) => void;
   handleCopyAddress: () => void;
   handleOpenUsernameModal: () => void;
   handleCloseUsernameCard: () => void;
-  handleBalanceSync: () => void;
   handleTopUpClick: () => void;
-  handleMoonPaySell: () => void;
+  handleWithdraw: () => void;
   setShowSendModal: (show: boolean) => void;
   setShowReceiveModal: (show: boolean) => void;
   setShowSwapModal: (show: boolean) => void;
@@ -68,17 +65,14 @@ export const RewardsSection: React.FC<RewardsSectionProps> = ({
   loadingYourRewards,
   loadingMoreRewards,
   claiming,
-  mainnetBalance,
   portfolioValue,
-  isBalanceSyncing,
   formatPublicKey,
   handleClaim,
   handleCopyAddress,
   handleOpenUsernameModal,
   handleCloseUsernameCard,
-  handleBalanceSync,
   handleTopUpClick,
-  handleMoonPaySell,
+  handleWithdraw,
   setShowSendModal,
   setShowReceiveModal,
   setShowSwapModal,
@@ -225,16 +219,13 @@ export const RewardsSection: React.FC<RewardsSectionProps> = ({
         wallet={wallet}
         user={user}
         userProfile={userProfile}
-        mainnetBalance={mainnetBalance}
         portfolioValue={portfolioValue}
-        isBalanceSyncing={isBalanceSyncing}
         formatPublicKey={formatPublicKey}
         handleCopyAddress={handleCopyAddress}
         handleOpenUsernameModal={handleOpenUsernameModal}
         handleCloseUsernameCard={handleCloseUsernameCard}
-        handleBalanceSync={handleBalanceSync}
         handleTopUpClick={handleTopUpClick}
-        handleMoonPaySell={handleMoonPaySell}
+        handleWithdraw={handleWithdraw}
         setShowSendModal={setShowSendModal}
         setShowReceiveModal={setShowReceiveModal}
         setShowSwapModal={setShowSwapModal}
