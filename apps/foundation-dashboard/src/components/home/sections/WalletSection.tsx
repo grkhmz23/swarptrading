@@ -143,7 +143,6 @@ export const WalletSection: React.FC<WalletSectionProps> = ({
                 // Use tokenPrices from API, fallback to token.usdPrice from Jupiter
                 const price = tokenPrices[token.symbol]?.price ?? token.usdPrice;
                 const priceChange = tokenPrices[token.symbol]?.priceChange24h ?? 0;
-                const isSOL = token.address === WRAPPED_SOL_MINT;
                 const held = holdingOf(token);
                 const heldValue = held.usdValue > 0 ? held.usdValue : held.balance * (price || 0);
                 const isSWARP = token.symbol === 'SWARP' || token.symbol === 'SWRP';

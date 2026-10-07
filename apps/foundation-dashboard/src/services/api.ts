@@ -1,5 +1,4 @@
-import { API_BASE_URL } from '@/config/env';
-import { ApiError, enc, query, request, type RequestOptions } from '@/lib/http';
+import { enc, query, request, type RequestOptions } from '@/lib/http';
 
 export interface ContinueFlowResponse {
   message: string;

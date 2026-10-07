@@ -51,7 +51,6 @@ export const TradeSection: React.FC<TradeSectionProps> = ({
   onTokenSelect,
 }) => {
   const trade = t.trade as Record<string, unknown> | undefined;
-  const wallet = t.wallet as Record<string, string> | undefined;
   const filters = trade?.filters as Record<string, string> | undefined;
 
   const formatPrice = (p: number | undefined) => {

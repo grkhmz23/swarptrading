@@ -93,7 +93,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
 }) => {
   const walletT = t.wallet as Record<string, unknown> | undefined;
   const commonT = t.common as Record<string, string> | undefined;
-  const moonPayT = t.moonPay as Record<string, string> | undefined;
   const chartT = walletT?.chart as Record<string, string> | undefined;
   const transactionT = walletT?.transaction as Record<string, string> | undefined;
 

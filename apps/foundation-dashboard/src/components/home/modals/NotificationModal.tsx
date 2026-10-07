@@ -6,6 +6,7 @@ import { apiService } from '@/services/api';
 import { Notification } from '@/types/Notification';
 import { useT } from '@/i18n/I18nProvider';
 import { getAccessToken } from '@/lib/session';
+import { useNow } from '@/hooks/useNow';
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   const [activeTab, setActiveTab] = useState<'foundation' | 'launchpad'>('foundation');
 
   const modalRef = useRef<HTMLDivElement>(null);
+  const now = useNow(30_000);
 
   useEffect(() => {
     if (isOpen) loadNotifications();
@@ -61,7 +63,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   };
 
   const formatTimeAgo = (timestamp: string) => {
-    const diffMs = Date.now() - new Date(timestamp).getTime();
+    const diffMs = now - new Date(timestamp).getTime();
     const mins = Math.floor(diffMs / 60000);
     const hours = Math.floor(mins / 60);
     const days = Math.floor(hours / 24);

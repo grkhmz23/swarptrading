@@ -5,6 +5,7 @@ import { apiService } from '@/services/api';
 import { errorMessage, newIdempotencyKey } from '@/lib/http';
 import { floorToDecimals, isAmountInput, parseAmount } from '@/lib/amount';
 import { PinConfirmModal } from '@/components/ui/PinConfirmModal';
+import { useNow } from '@/hooks/useNow';
 
 interface StakingPool {
   id: string;
@@ -69,6 +70,7 @@ function toPool(p: Record<string, unknown>): StakingPool | null {
 }
 
 export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => {
+  const now = useNow(60_000);
   const [pools, setPools] = useState<StakingPool[]>([]);
   const [positions, setPositions] = useState<StakingPosition[]>([]);
   const [summary, setSummary] = useState<StakingSummary>(EMPTY_SUMMARY);
@@ -197,7 +199,7 @@ export const StakingSection: React.FC<StakingSectionProps> = ({ authToken }) => 
   };
 
   const getProgress = (start: string, end: string) => {
-    const s = new Date(start).getTime(), e = new Date(end).getTime(), n = Date.now();
+    const s = new Date(start).getTime(), e = new Date(end).getTime(), n = now;
     if (n >= e) return 100;
     if (n <= s) return 0;
     return Math.round(((n - s) / (e - s)) * 100);

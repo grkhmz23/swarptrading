@@ -55,7 +55,6 @@ export const WalletSidebar: React.FC<WalletSidebarProps> = ({
 }) => {
   const walletT = t.wallet as Record<string, unknown> | undefined;
   const commonT = t.common as Record<string, string> | undefined;
-  const moonPayT = t.moonPay as Record<string, string> | undefined;
 
   return (
     <div className={`w-full lg:w-[400px] lg:min-w-[400px] !p-4 lg:!p-7 !space-y-4 lg:!space-y-6 border-b lg:border-l border-[#2B2D30] overflow-y-auto overflow-x-hidden h-full ${className}`}>

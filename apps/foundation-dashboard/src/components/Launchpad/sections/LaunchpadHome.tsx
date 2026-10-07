@@ -6,6 +6,7 @@ import { apiService, LaunchpadProject } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
 import type { TranslationKeys } from "@/i18n";
 import { cssUrl } from "@/lib/css";
+import { useNow } from "@/hooks/useNow";
 
 // Types for display (transformed from API response)
 interface FeaturedProject {
@@ -304,6 +305,7 @@ export default function LaunchpadHome() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const liveSeqRef = useRef(0);
+  const now = useNow(60_000);
 
   const fetchFeaturedProjects = useCallback(async () => {
     setIsLoadingFeatured(true);
@@ -404,7 +406,7 @@ export default function LaunchpadHome() {
       (!filters.marketCapMax || !Number.isFinite(mcMax) || project.marketCapUsd <= mcMax);
 
     // Age range in the chosen unit
-    const ageMs = Date.now() - project.createdAtMs;
+    const ageMs = now - project.createdAtMs;
     const unitMs = AGE_UNIT_MS[filters.ageUnit];
     const ageMin = Number(filters.ageMin);
     const ageMax = Number(filters.ageMax);

@@ -12,6 +12,29 @@ Paths are relative to `apps/foundation-dashboard/src/` unless they start with
 
 ---
 
+## Status (updated after the fix pass)
+
+**Done in the front-ends** — every Critical/High row (A1–A10, M1–M11, L1–L8,
+D1–D5), all Medium items and the Low list, with these exceptions:
+
+| Item | State | Why |
+| --- | --- | --- |
+| A1, A2, A4, A6, A9, A10, M1, M2, M5 (server side) | Client side done; **needs backend** | The UI now gates, re-verifies the PIN and sends idempotency keys / slippage / mints, but only the server can enforce it. See [`BACKEND_REQUIREMENTS.md`](BACKEND_REQUIREMENTS.md). |
+| A3 OAuth `state` | Client side done | Callbacks are accepted only in the tab that started sign-in (blocks login CSRF). Full fix needs the backend to echo `state` or switch to a code exchange. |
+| A7 token in `localStorage` | Mitigated | Third-party scripts removed (Veriff bundled from npm), strict CSP, token access centralised in `lib/session.ts`. Moving to an httpOnly cookie needs the backend. |
+| M11 MoonPay signing | Mitigated | MoonPay only with a sandbox key; live purchases/withdrawals use the backend-signed Transak flow. |
+| Split `HomeScreen.tsx` / `api.ts` | Partly | 1,849 → 1,363 and 2,375 → 1,662 lines (dead code removed); a full split is a refactor with no behaviour change, left for later. |
+| One onboarding flow | Not merged | Both flows (phone routes, Google state machine) are now guarded and PIN-gated; merging them is a product decision. |
+| Lint | 96 → 65 warnings, 0 errors | Remaining: 42 `set-state-in-effect` (fetch-on-mount pattern), 17 `<img>` vs `next/image`, 6 hoisted-function `immutability`. |
+| `npm audit` | 0 high/critical | Dashboard: 2 moderate in `jayson`'s server-only `stream-json` (not reachable from the browser build). Admin: 0. |
+| New UI strings | English only | Translations are served by the backend; keys need adding there. |
+
+Tests: 43 unit tests (HTTP client, session/JWT, PIN rules, PIN gate, OAuth
+state, amounts, OHLC, trade status). Browser smoke tests were run against a
+mocked API for the auth guard, send/swap, and every launchpad screen.
+
+---
+
 ## 1. Summary
 
 | | Dashboard | Admin |

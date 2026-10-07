@@ -378,7 +378,7 @@ export default function TradingViewChart({
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (_e: MouseEvent) => {
+    const handleClickOutside = () => {
       if (isDropdownOpen) {
         setIsDropdownOpen(false);
       }
