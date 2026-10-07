@@ -4,22 +4,9 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 
-import { API_BASE_URL } from '@/config/env';
+import { fetchTokenDetail, type TokenData } from '@/services/tokenDetail';
+import { isLikelySolanaAddress } from '@/lib/solana';
 
-interface TokenData {
-  address: string;
-  symbol: string;
-  name: string;
-  logoURI?: string;
-  price: number;
-  priceChange24h: number;
-  volume24h: number;
-  marketCap: number;
-  liquidity: number;
-  fdv: number;
-  holderCount: number;
-  isVerified?: boolean;
-}
 
 export default function TokenDetailPage() {
   const params = useParams();
@@ -32,56 +19,39 @@ export default function TokenDetailPage() {
   const [failedImage, setFailedImage] = useState(false);
 
   useEffect(() => {
-    const fetchTokenData = async () => {
-      if (!address) return;
+    if (!address) return;
+    const controller = new AbortController();
 
+    const load = async () => {
       setLoading(true);
       setError(null);
-
-      try {
-        // Fetch token data from backend API (which fetches from DexScreener)
-        const response = await fetch(`${API_BASE_URL}/tokens/detail/${address}`);
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('Token not found');
-            return;
-          }
-          throw new Error('Failed to fetch token data');
-        }
-
-        const data = await response.json();
-
-        if (data.token) {
-          setTokenData({
-            address: data.token.address,
-            symbol: data.token.symbol,
-            name: data.token.name,
-            logoURI: data.token.logoURI,
-            price: data.token.price,
-            priceChange24h: data.token.priceChange24h,
-            volume24h: data.token.volume24h,
-            marketCap: data.token.marketCap,
-            liquidity: data.token.liquidity,
-            fdv: data.token.fdv,
-            holderCount: data.token.holderCount || 0,
-            isVerified: data.token.isVerified,
-          });
-        } else {
-          setError('Token not found');
-        }
-      } catch (err) {
-        console.error('Error fetching token data:', err);
-        setError('Failed to load token data');
-      } finally {
+      setFailedImage(false);
+      if (!isLikelySolanaAddress(address)) {
+        setTokenData(null);
+        setError('Invalid token address');
         setLoading(false);
+        return;
+      }
+      try {
+        const data = await fetchTokenDetail(address, controller.signal);
+        if (controller.signal.aborted) return;
+        setTokenData(data);
+        if (!data) setError('Token not found');
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setTokenData(null);
+        setError(err instanceof Error && err.message ? err.message : 'Failed to load token data');
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
-    fetchTokenData();
+    load();
+    return () => controller.abort();
   }, [address]);
 
-  const formatPrice = (p: number) => {
+  const formatPrice = (p: number | null) => {
+    if (p === null) return 'Price unavailable';
     if (!p) return '$0.00';
     if (p >= 1000) return `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     if (p >= 1) return `$${p.toFixed(2)}`;
@@ -101,8 +71,8 @@ export default function TokenDetailPage() {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+    } catch {
+      // Clipboard access can be denied by the browser; nothing to recover.
     }
   };
 
@@ -210,10 +180,12 @@ export default function TokenDetailPage() {
           <iframe
             id="dexscreener-embed"
             title="DexScreener Chart"
-            src={`https://dexscreener.com/solana/${address}?embed=1&loadChartSettings=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=15`}
+            src={`https://dexscreener.com/solana/${encodeURIComponent(address)}?embed=1&loadChartSettings=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=15`}
             className="w-full"
             style={{ height: '500px', border: 'none' }}
             allow="clipboard-write"
+            sandbox="allow-scripts allow-same-origin allow-popups"
+            referrerPolicy="no-referrer"
           />
         </div>
 
@@ -250,13 +222,13 @@ export default function TokenDetailPage() {
         {/* Action Buttons */}
         <div className="flex gap-4">
           <button
-            onClick={() => router.push(`/home?section=Trade&swap=${address}`)}
+            onClick={() => router.push(`/dashboard?swap=${encodeURIComponent(address)}`)}
             className="flex-1 bg-[#40E0D0] text-[#090A11] py-4 rounded-xl font-bold text-lg hover:bg-[#40E0D0]/90 transition-colors"
           >
             Buy {tokenData.symbol}
           </button>
           <button
-            onClick={() => window.open(`https://dexscreener.com/solana/${address}`, '_blank')}
+            onClick={() => window.open(`https://dexscreener.com/solana/${encodeURIComponent(address)}`, '_blank', 'noopener,noreferrer')}
             className="px-6 py-4 bg-[#2B2D30] text-white rounded-xl font-semibold hover:bg-[#363739] transition-colors flex items-center gap-2"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">

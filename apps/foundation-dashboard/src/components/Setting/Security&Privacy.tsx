@@ -7,6 +7,7 @@ import { apiService } from "@/services/api";
 import { useRouter } from "next/navigation";
 import DeleteAccountModal from "./DeleteAccountModal";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 export default function SecurityPrivacy() {
   const t = useT();
@@ -15,7 +16,7 @@ export default function SecurityPrivacy() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const router = useRouter();
   const handlePasscodeSubmit = async (data: { oldPasscode: string; newPasscode: string }) => {
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
     if (!token) throw new Error("Please login first");
 
     try {
@@ -32,7 +33,7 @@ export default function SecurityPrivacy() {
   };
 
 const handleDeleteAccount = async () => {
-  const token = localStorage.getItem("swarp_fd_access_token");
+  const token = getAccessToken();
   if (!token) {
     throw new Error("Please login first");
   }

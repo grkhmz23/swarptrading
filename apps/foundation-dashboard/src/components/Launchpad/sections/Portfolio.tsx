@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiService, LaunchpadProject } from "@/services/api";
 import TradeModal from "../TradeModal";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 // Token holding type - now matches API response
 interface TokenHolding {
@@ -134,7 +135,7 @@ export default function Portfolio() {
   const fetchPortfolio = useCallback(async () => {
     setIsLoadingTokens(true);
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) {
         setTokensHeld([]);
         setTotalBalance("$0.00");
@@ -183,7 +184,7 @@ export default function Portfolio() {
   const fetchTradeHistory = useCallback(async () => {
     setIsLoadingTradeHistory(true);
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) {
         setTradeHistory([]);
         return;

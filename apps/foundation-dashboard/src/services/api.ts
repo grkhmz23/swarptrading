@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '@/config/env';
+import { ApiError, enc, query, request, type RequestOptions } from '@/lib/http';
 
 export interface ContinueFlowResponse {
   message: string;
@@ -25,11 +26,7 @@ export interface VerifyOtpResponse {
   };
 }
 
-export interface ApiError {
-  message: string;
-  statusCode: number;
-  error?: string;
-}
+export { ApiError } from '@/lib/http';
 
 export interface CreateWalletResponse {
   wallet: {
@@ -66,117 +63,8 @@ export interface RewardResponse {
 }
 
 class ApiService {
-  private async makeRequest<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const url = `${API_BASE_URL}${endpoint}`;
-    
-    try {
-      const response = await fetch(url, {
-        mode: 'cors',
-        cache: 'no-cache',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'any',
-          'User-Agent': 'Mozilla/5.0 (compatible; SwarpFoundationDashboard/1.0)',
-          'Accept': 'application/json, text/plain, */*',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Sec-Fetch-Dest': 'empty',
-          'Sec-Fetch-Mode': 'cors',
-          'Sec-Fetch-Site': 'cross-site',
-          ...options.headers,
-        },
-        ...options,
-      });
-
-      // Check if response is HTML (ngrok warning page)
-      const contentType = response.headers.get('content-type');
-      let data;
-      
-      if (contentType && !contentType.includes('application/json')) {
-        // Try to get the response text to see what we actually received
-        const responseText = await response.text();
-        console.error('Non-JSON response received:', {
-          url,
-          status: response.status,
-          contentType,
-          responseText: responseText.substring(0, 500) + (responseText.length > 500 ? '...' : '')
-        });
-        
-        console.error('Full response details:', {
-          headers: Array.from(response.headers.entries()),
-          ok: response.ok,
-          redirected: response.redirected,
-          type: response.type,
-          url: response.url
-        });
-        
-        // If it's an ngrok warning page, give specific instructions
-        if (responseText.includes('ngrok') && responseText.includes('Visit Site')) {
-          throw {
-            message: 'ngrok browser warning detected. Please visit the ngrok URL directly in a new tab first, then refresh this page.',
-            statusCode: response.status,
-            error: 'ngrok Warning Page',
-          } as ApiError;
-        }
-        
-        throw {
-          message: 'Server returned non-JSON response. This may be due to ngrok browser warning or server error.',
-          statusCode: response.status,
-          error: 'Invalid Response Format',
-        } as ApiError;
-      }
-
-      // Clone response before reading so we can retry if JSON parsing fails
-      const responseClone = response.clone();
-
-      try {
-        data = await response.json();
-      } catch (jsonError) {
-        // If JSON parsing fails, get the raw text from the clone to debug
-        const responseText = await responseClone.text();
-        console.error('JSON parsing failed:', {
-          url,
-          status: response.status,
-          contentType,
-          jsonError,
-          responseText: responseText.substring(0, 500) + (responseText.length > 500 ? '...' : '')
-        });
-
-        throw {
-          message: 'Failed to parse server response as JSON.',
-          statusCode: response.status,
-          error: 'JSON Parse Error',
-        } as ApiError;
-      }
-
-      if (!response.ok) {
-        console.error('API Error Response:', {
-          status: response.status,
-          statusText: response.statusText,
-          data: data,
-          url: url
-        });
-        
-        throw {
-          message: data.message || 'An error occurred',
-          statusCode: response.status,
-          error: data.error || 'API Error',
-        } as ApiError;
-      }
-
-      return data;
-    } catch (error) {
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        throw {
-          message: 'Unable to connect to server. Please check your connection.',
-          statusCode: 0,
-          error: 'Network Error',
-        } as ApiError;
-      }
-      throw error;
-    }
+  private makeRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    return request<T>(endpoint, options);
   }
 
   // Continue flow: Use the new backend endpoint that handles both login and register
@@ -284,7 +172,7 @@ class ApiService {
 
   // Airdrop devnet SOL for testing
   async airdropSOL(walletId: string, token: string, amount: number = 2): Promise<{ message: string; txSignature: string; balance: number }> {
-    return this.makeRequest(`/wallet/${walletId}/airdrop`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/airdrop`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -294,7 +182,7 @@ class ApiService {
   }
 
   async initializeWallet(walletId: string, token: string): Promise<{ success: boolean; message: string; balance: number; signature: string; explorerUrl: string; walletUrl: string }> {
-    return this.makeRequest(`/wallet/${walletId}/initialize`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/initialize`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -316,7 +204,7 @@ class ApiService {
       requestBody.tokenMint = data.tokenMint;
     }
 
-    return this.makeRequest(`/wallet/${walletId}/send-transaction`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/send-transaction`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -327,7 +215,7 @@ class ApiService {
   }
 
   async getTransactionHistory(walletId: string, token: string): Promise<{ transactions: Array<{ id: string; signature: string; type: 'SEND' | 'RECEIVE'; amount: number; fromAddress: string; toAddress: string; fee: number; status: 'PENDING' | 'CONFIRMED' | 'FAILED'; timestamp: string; errorMessage?: string }>; total: number }> {
-    return this.makeRequest(`/wallet/${walletId}/transactions`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/transactions`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -363,7 +251,7 @@ class ApiService {
   }
 
   async getSolanaHistoricalData(period: string = '1D'): Promise<{ timestamp: number; price: number }[]> {
-    return this.makeRequest(`/market-data/solana/historical?period=${period}`, {
+    return this.makeRequest(`/market-data/solana/historical${query({ period })}`, {
       method: 'GET',
     });
   }
@@ -453,8 +341,8 @@ class ApiService {
     if (params?.unreadOnly) searchParams.append('unreadOnly', params.unreadOnly.toString());
     if (params?.type) searchParams.append('type', params.type);
 
-    const query = searchParams.toString();
-    const url = `/notifications${query ? `?${query}` : ''}`;
+    const qs = searchParams.toString();
+    const url = `/notifications${qs ? `?${qs}` : ''}`;
 
     return this.makeRequest(url, {
       method: 'GET',
@@ -469,7 +357,7 @@ class ApiService {
     isRead: boolean;
     readAt: string;
   }> {
-    return this.makeRequest(`/notifications/${notificationId}/read`, {
+    return this.makeRequest(`/notifications/${enc(notificationId)}/read`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -502,7 +390,7 @@ class ApiService {
       ...(mainnetTxSignature && { mainnetTxSignature })
     };
 
-    return this.makeRequest(`/wallet/${walletId}/sync-moonpay-balance`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/sync-moonpay-balance`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -537,7 +425,7 @@ class ApiService {
     route: unknown;
   }> {
 
-    return this.makeRequest(`/wallet/${walletId}/swap/quote`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/swap/quote`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -564,7 +452,7 @@ class ApiService {
     error?: string;
   }> {
 
-    return this.makeRequest(`/wallet/${walletId}/swap/execute`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/swap/execute`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -612,8 +500,8 @@ class ApiService {
     if (params?.inputToken) searchParams.append('inputToken', params.inputToken);
     if (params?.outputToken) searchParams.append('outputToken', params.outputToken);
 
-    const query = searchParams.toString();
-    const url = `/wallet/${walletId}/swap/history${query ? `?${query}` : ''}`;
+    const qs = searchParams.toString();
+    const url = `/wallet/${enc(walletId)}/swap/history${qs ? `?${qs}` : ''}`;
 
     return this.makeRequest(url, {
       method: 'GET',
@@ -628,7 +516,7 @@ class ApiService {
     output: string;
     dex?: string;
   }>> {
-    return this.makeRequest(`/wallet/${walletId}/swap/supported-pairs`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/swap/supported-pairs`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -653,7 +541,7 @@ class ApiService {
     exchangeRate: number;
   }> {
 
-    return this.makeRequest(`/wallet/${walletId}/swap/estimate-fees`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/swap/estimate-fees`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -680,7 +568,7 @@ class ApiService {
       formattedBalance: string;
       usdValue: number;
       tokenAccount?: string;
-    }> } = await this.makeRequest(`/wallet/${walletId}/swap/tokens/balances`, {
+    }> } = await this.makeRequest(`/wallet/${enc(walletId)}/swap/tokens/balances`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -707,7 +595,7 @@ class ApiService {
     balances: Array<{ symbol: string; mint: string; balance: number; formattedBalance: string; usdValue: number }>;
     portfolioValue: number;
   }> {
-    return this.makeRequest(`/wallet/${walletId}/swap/tokens/balances`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/swap/tokens/balances`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` },
     });
@@ -741,7 +629,7 @@ class ApiService {
       balance: number;
     }>;
   }> {
-    return this.makeRequest(`/wallet/${walletId}/swap/tokens/sync`, {
+    return this.makeRequest(`/wallet/${enc(walletId)}/swap/tokens/sync`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -751,18 +639,6 @@ class ApiService {
     });
   }
 
-//   // === Generate Referral Code ===
-// static async generateReferralCode(token: string) {
-//   return await this.makeRequest<{ referralCode: string }>(
-//     '/auth/generate-referral',
-//     {
-//       method: 'POST',
-//       headers: {
-//         Authorization: `Bearer ${token}`,
-//       },
-//     }
-//   );
-// }
 
 async generateReferral(token: string): Promise<{ referralCode: string }> {
   return this.makeRequest<{ referralCode: string }>('/auth/generate-referral', {
@@ -839,7 +715,7 @@ async updatePasscode(
     rewardType: string,
     token: string
   ): Promise<{ rewardName: string; rewardType: string; claimed: boolean }> {
-    return this.makeRequest(`/rewards/${userId}/${rewardType}`, {
+    return this.makeRequest(`/rewards/${enc(userId)}/${enc(rewardType)}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -853,7 +729,7 @@ async updatePasscode(
     rewardType: string,
     token: string
   ): Promise<RewardResponse> {
-    return this.makeRequest(`/rewards/${userId}/reward/${rewardType}`, {
+    return this.makeRequest(`/rewards/${enc(userId)}/reward/${enc(rewardType)}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -866,7 +742,7 @@ async updatePasscode(
     userId: string,
     token: string
   ): Promise<RewardResponse[]> {
-    return this.makeRequest(`/rewards/${userId}`, {
+    return this.makeRequest(`/rewards/${enc(userId)}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -880,7 +756,7 @@ async updatePasscode(
     userId: string,
     token: string
   ): Promise<RewardResponse[]> {
-    return this.makeRequest(`/rewards/${userId}/milestones`, {
+    return this.makeRequest(`/rewards/${enc(userId)}/milestones`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -894,7 +770,7 @@ async updatePasscode(
     userId: string,
     token: string
   ): Promise<RewardResponse[]> {
-    return this.makeRequest(`/rewards/${userId}/your-rewards`, {
+    return this.makeRequest(`/rewards/${enc(userId)}/your-rewards`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -908,7 +784,7 @@ async updatePasscode(
     userId: string,
     token: string
   ): Promise<RewardResponse[]> {
-    return this.makeRequest(`/rewards/${userId}/more-rewards`, {
+    return this.makeRequest(`/rewards/${enc(userId)}/more-rewards`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -967,42 +843,6 @@ async addUserContact(userId: string, nickname: string, address: string, token: s
     });
   }
 
-  // Upload profile picture (multipart/form-data)
-  // async uploadProfilePicture(file: File, token: string): Promise<{ url: string }> {
-  //   const url = `${API_BASE_URL}/auth/upload/profile-picture`;
-
-  //   const form = new FormData();
-  //   form.append('file', file);
-
-  //   try {
-  //     const response = await fetch(url, {
-  //       method: 'POST',
-  //       headers: {
-  //         'Authorization': `Bearer ${token}`,
-  //         // DO NOT set Content-Type; browser will set the boundary for multipart
-  //         'ngrok-skip-browser-warning': 'any',
-  //         'User-Agent': 'Mozilla/5.0 (compatible; SwarpFoundationDashboard/1.0)'
-  //       },
-  //       body: form,
-  //     });
-
-  //     const contentType = response.headers.get('content-type') || '';
-  //     if (!contentType.includes('application/json')) {
-  //       const text = await response.text();
-  //       throw { message: 'Invalid response from upload endpoint', statusCode: response.status, error: text } as ApiError;
-  //     }
-
-  //     const data = await response.json();
-
-  //     if (!response.ok) {
-  //       throw { message: data.message || 'Upload failed', statusCode: response.status, error: data.error } as ApiError;
-  //     }
-
-  //     return data;
-  //   } catch (err) {
-  //     throw err;
-  //   }
-  // }
 
   async updateUserProfile(
     data: { firstName: string; lastName: string; email: string },
@@ -1048,7 +888,7 @@ async addUserContact(userId: string, nickname: string, address: string, token: s
     access_token: string;
     user: { id: string; email: string; firstName: string; lastName: string };
   }> {
-    return this.makeRequest(`/auth/google/callback?code=${code}`, {
+    return this.makeRequest(`/auth/google/callback${query({ code })}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -1093,7 +933,7 @@ async getExchangeRates(): Promise<{
 }
 
 async getTranslations(locale: string): Promise<Record<string, unknown>> {
-  return this.makeRequest<Record<string, unknown>>(`/translations/${locale}`, {
+  return this.makeRequest<Record<string, unknown>>(`/translations/${enc(locale)}`, {
     method: 'GET',
   });
 }
@@ -1207,11 +1047,11 @@ async getTokenPrices(symbols?: string[]): Promise<{
   prices: Record<string, { price: number; priceChange24h?: number }>;
   timestamp: number;
 }> {
-  const query = symbols ? `?symbols=${symbols.join(',')}` : '';
+  const qs = query({ symbols: symbols?.join(',') });
   return this.makeRequest<{
     prices: Record<string, { price: number; priceChange24h?: number }>;
     timestamp: number;
-  }>(`/tokens/prices${query}`, {
+  }>(`/tokens/prices${qs}`, {
     method: 'GET',
   });
 }
@@ -1259,8 +1099,8 @@ async getAllJupiterTokens(params?: { search?: string; limit?: number }): Promise
   if (params?.search) searchParams.append('search', params.search);
   if (params?.limit) searchParams.append('limit', params.limit.toString());
 
-  const query = searchParams.toString();
-  return this.makeRequest(`/tokens/all${query ? `?${query}` : ''}`, {
+  const qs = searchParams.toString();
+  return this.makeRequest(`/tokens/all${qs ? `?${qs}` : ''}`, {
     method: 'GET',
   });
 }
@@ -1311,8 +1151,8 @@ async getTokensWithVolume(params?: { search?: string; limit?: number }): Promise
   if (params?.search) searchParams.append('search', params.search);
   if (params?.limit) searchParams.append('limit', params.limit.toString());
 
-  const query = searchParams.toString();
-  return this.makeRequest(`/tokens/with-volume${query ? `?${query}` : ''}`, {
+  const qs = searchParams.toString();
+  return this.makeRequest(`/tokens/with-volume${qs ? `?${qs}` : ''}`, {
     method: 'GET',
   });
 }
@@ -1368,8 +1208,8 @@ async getLaunchpadLiveProjects(params?: {
   if (params?.sortBy) searchParams.append('sortBy', params.sortBy);
   if (params?.sortOrder) searchParams.append('sortOrder', params.sortOrder);
 
-  const query = searchParams.toString();
-  return this.makeRequest(`/launchpad/projects/live${query ? `?${query}` : ''}`, {
+  const qs = searchParams.toString();
+  return this.makeRequest(`/launchpad/projects/live${qs ? `?${qs}` : ''}`, {
     method: 'GET',
   });
 }
@@ -1395,14 +1235,14 @@ async getLaunchpadProjects(params?: {
   if (params?.sortBy) searchParams.append('sortBy', params.sortBy);
   if (params?.sortOrder) searchParams.append('sortOrder', params.sortOrder);
 
-  const query = searchParams.toString();
-  return this.makeRequest(`/launchpad/projects${query ? `?${query}` : ''}`, {
+  const qs = searchParams.toString();
+  return this.makeRequest(`/launchpad/projects${qs ? `?${qs}` : ''}`, {
     method: 'GET',
   });
 }
 
 async getLaunchpadProject(projectId: string, token?: string | null): Promise<LaunchpadProject> {
-  return this.makeRequest(`/launchpad/projects/${projectId}`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}`, {
     method: 'GET',
     ...(token && { headers: { Authorization: `Bearer ${token}` } }),
   });
@@ -1434,28 +1274,11 @@ async uploadLaunchpadProjectImage(
   const formData = new FormData();
   formData.append('image', file);
 
-  const url = `${API_BASE_URL}/launchpad/upload-image`;
-
-  const response = await fetch(url, {
+  return this.makeRequest('/launchpad/upload-image', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'ngrok-skip-browser-warning': 'any',
-      'User-Agent': 'Mozilla/5.0 (compatible; SwarpFoundationDashboard/1.0)',
-    },
+    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw {
-      message: errorData.message || 'Failed to upload image',
-      statusCode: response.status,
-      error: errorData.error || 'Upload Error',
-    } as ApiError;
-  }
-
-  return response.json();
 }
 
 async getLaunchpadBuyQuote(
@@ -1468,7 +1291,7 @@ async getLaunchpadBuyQuote(
   priceImpact: number;
   fee: number;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/quote/buy?amount=${amount}`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/quote/buy${query({ amount })}`, {
     method: 'GET',
   });
 }
@@ -1483,7 +1306,7 @@ async getLaunchpadSellQuote(
   priceImpact: number;
   fee: number;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/quote/sell?amount=${amount}`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/quote/sell${query({ amount })}`, {
     method: 'GET',
   });
 }
@@ -1502,7 +1325,7 @@ async buyLaunchpadToken(
   };
   message: string;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/buy`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/buy`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1526,7 +1349,7 @@ async sellLaunchpadToken(
   };
   message: string;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/sell`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/sell`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1543,7 +1366,7 @@ async getLaunchpadTokenBalance(
   balance: number;
   tokenAddress: string;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/balance`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/balance`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1567,8 +1390,8 @@ async getLaunchpadProjectTrades(
     signature?: string;
   }>;
 }> {
-  const query = params?.limit ? `?limit=${params.limit}` : '';
-  return this.makeRequest(`/launchpad/projects/${projectId}/trades${query}`, {
+  const qs = params?.limit ? `?limit=${params.limit}` : '';
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/trades${qs}`, {
     method: 'GET',
   });
 }
@@ -1674,7 +1497,7 @@ async toggleLaunchpadWatchlist(
   isWatching: boolean;
   message: string;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/watchlist`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/watchlist`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1733,7 +1556,7 @@ async getLaunchpadAlert(alertId: string, token: string): Promise<{
   success: boolean;
   alert: LaunchpadAlert;
 }> {
-  return this.makeRequest(`/launchpad/alerts/${alertId}`, {
+  return this.makeRequest(`/launchpad/alerts/${enc(alertId)}`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1755,7 +1578,7 @@ async updateLaunchpadAlert(
   success: boolean;
   alert: LaunchpadAlert;
 }> {
-  return this.makeRequest(`/launchpad/alerts/${alertId}`, {
+  return this.makeRequest(`/launchpad/alerts/${enc(alertId)}`, {
     method: 'PATCH',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1769,7 +1592,7 @@ async deleteLaunchpadAlert(alertId: string, token: string): Promise<{
   success: boolean;
   message: string;
 }> {
-  return this.makeRequest(`/launchpad/alerts/${alertId}`, {
+  return this.makeRequest(`/launchpad/alerts/${enc(alertId)}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1796,8 +1619,8 @@ async getLaunchpadComments(
   if (params?.page) searchParams.append('page', params.page.toString());
   if (params?.limit) searchParams.append('limit', params.limit.toString());
 
-  const query = searchParams.toString();
-  return this.makeRequest(`/launchpad/projects/${projectId}/comments${query ? `?${query}` : ''}`, {
+  const qs = searchParams.toString();
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/comments${qs ? `?${qs}` : ''}`, {
     method: 'GET',
   });
 }
@@ -1816,7 +1639,7 @@ async postLaunchpadComment(
   };
   message: string;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/comments`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/comments`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1834,7 +1657,7 @@ async toggleLaunchpadCommentLike(
   isLiked: boolean;
   likes: number;
 }> {
-  return this.makeRequest(`/launchpad/comments/${commentId}/like`, {
+  return this.makeRequest(`/launchpad/comments/${enc(commentId)}/like`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1854,8 +1677,8 @@ async getLaunchpadHolders(
     percentage: number;
   }>;
 }> {
-  const query = params?.limit ? `?limit=${params.limit}` : '';
-  return this.makeRequest(`/launchpad/projects/${projectId}/holders${query}`, {
+  const qs = params?.limit ? `?limit=${params.limit}` : '';
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/holders${qs}`, {
     method: 'GET',
   });
 }
@@ -1920,7 +1743,7 @@ async getLaunchpadTransactionStatus(
   confirmations?: number;
   error?: string;
 }> {
-  return this.makeRequest(`/launchpad/onchain/tx/${signature}`, {
+  return this.makeRequest(`/launchpad/onchain/tx/${enc(signature)}`, {
     method: 'GET',
   });
 }
@@ -1931,7 +1754,7 @@ async createLaunchpadBuyTransactionOnChain(
   amount: number,
   token: string
 ): Promise<LaunchpadOnChainTransactionResponse> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/onchain/buy`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/buy`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1957,7 +1780,7 @@ async confirmLaunchpadBuyTransaction(
   };
   message: string;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/onchain/confirm-buy`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/confirm-buy`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1973,7 +1796,7 @@ async createLaunchpadSellTransactionOnChain(
   amount: number,
   token: string
 ): Promise<LaunchpadOnChainTransactionResponse> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/onchain/sell`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/sell`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -1999,7 +1822,7 @@ async confirmLaunchpadSellTransaction(
   };
   message: string;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/onchain/confirm-sell`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/confirm-sell`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -2014,7 +1837,7 @@ async createLaunchpadMigrateTransaction(
   projectId: string,
   token: string
 ): Promise<LaunchpadOnChainTransactionResponse> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/onchain/migrate`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/migrate`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -2032,7 +1855,7 @@ async getLaunchpadBondingCurveState(
   progress: number;
   isCompleted: boolean;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/onchain/state`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/state`, {
     method: 'GET',
   });
 }
@@ -2046,7 +1869,7 @@ async getLaunchpadUserPosition(
   averagePrice: number;
   unrealizedPnl: number;
 }> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/onchain/position`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/onchain/position`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -2087,7 +1910,7 @@ async buyLaunchpadTokensCustodial(
   token: string,
   slippageTolerance: number = 5
 ): Promise<LaunchpadCustodialTradeResponse> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/custodial/buy`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/custodial/buy`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -2104,7 +1927,7 @@ async sellLaunchpadTokensCustodial(
   token: string,
   slippageTolerance: number = 5
 ): Promise<LaunchpadCustodialTradeResponse> {
-  return this.makeRequest(`/launchpad/projects/${projectId}/custodial/sell`, {
+  return this.makeRequest(`/launchpad/projects/${enc(projectId)}/custodial/sell`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -2115,7 +1938,7 @@ async sellLaunchpadTokensCustodial(
 }
 
 async generateTransakUrl(walletId: string, token: string, data: { type: 'buy' | 'sell', walletAddress?: string, fiatCurrency?: string, cryptoCurrency?: string, fiatAmount?: number }): Promise<{ url: string; type: string; environment: string }> {
-  return this.makeRequest(`/wallet/${walletId}/generate-transak-url`, {
+  return this.makeRequest(`/wallet/${enc(walletId)}/generate-transak-url`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -2184,7 +2007,7 @@ async getVeriffKycStatus(token: string): Promise<{
   }
 
   async withdrawStake(token: string, positionId: string) {
-    return this.makeRequest(`/staking/withdraw/${positionId}`, {
+    return this.makeRequest(`/staking/withdraw/${enc(positionId)}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     });

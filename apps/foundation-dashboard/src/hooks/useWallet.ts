@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { apiService } from '@/services/api';
 import { balanceSyncService } from '@/services/balanceSync';
 import { WalletData } from '@/types/home';
+import { getAccessToken } from '@/lib/session';
 
 interface UseWalletReturn {
   wallet: WalletData | null;
@@ -31,7 +32,7 @@ export const useWallet = (): UseWalletReturn => {
 
   const loadWalletData = useCallback(async () => {
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
 
       if (!token) {
         console.error('❌ No authentication token found');
@@ -119,7 +120,7 @@ export const useWallet = (): UseWalletReturn => {
 
       if (syncResult.success && syncResult.difference && syncResult.difference > 0) {
         // Sync the balance to backend devnet wallet
-        const token = localStorage.getItem('swarp_fd_access_token');
+        const token = getAccessToken();
         if (token) {
           try {
             const backendSyncResult = await apiService.syncMoonPayBalance(

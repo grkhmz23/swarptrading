@@ -8,6 +8,7 @@ import { AppDispatch, RootState } from "@/store";
 import { fetchContacts, addContact } from "@/store/slices/contactSlice";
 import Image from "next/image";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 const resolveProfileImageSrc = (value?: string | null) => {
   if (!value) return null;
   const trimmed = value.trim();
@@ -49,7 +50,7 @@ export default function AddressBook() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setAuthToken(localStorage.getItem("swarp_fd_access_token"));
+    setAuthToken(getAccessToken());
 
     const initialQuery = localStorage.getItem("swarp_fd_address_book_search") || "";
     setSearchQuery(initialQuery);

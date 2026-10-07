@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import AddAssetModal from "../AddAssetModal";
 import { apiService, LaunchpadProject } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 // Helper function to format time ago
 const formatTimeAgo = (dateString: string): string => {
@@ -49,7 +50,7 @@ export default function Watchlist() {
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) {
         setError(t.launchpad?.watchlist?.loginRequired || "Please login to view your watchlist");
         setIsLoading(false);
@@ -87,7 +88,7 @@ export default function Watchlist() {
 
   const handleRemoveFromWatchlist = async (projectId: string) => {
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) return;
 
       await apiService.toggleLaunchpadWatchlist(projectId, token);

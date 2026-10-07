@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { apiService } from '@/services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
+import { getAccessToken } from '@/lib/session';
 
 interface CreatingWalletProps {
   onComplete?: () => void;
@@ -25,13 +26,13 @@ export const CreatingWallet: React.FC<CreatingWalletProps> = ({
     const createWallet = async () => {
       try {
         console.error('🔍 All localStorage items:', {
-          accessToken: localStorage.getItem('swarp_fd_access_token') ? 'present' : 'missing',
+          accessToken: getAccessToken() ? 'present' : 'missing',
           isNewUser: localStorage.getItem('swarp_fd_is_new_user'),
           pendingPhoneNumber: localStorage.getItem('swarp_fd_pending_phone'),
           allKeys: Object.keys(localStorage)
         });
         
-        const token = localStorage.getItem('swarp_fd_access_token');
+        const token = getAccessToken();
         
         if (!token) {
           setError(t.onboarding?.creatingWallet?.errors?.tokenNotFound || 'Authentication token not found. Please log in again.');

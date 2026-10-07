@@ -6,6 +6,7 @@ import { apiService } from '@/services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { getAccessToken, setAccessToken } from '@/lib/session';
 
 interface EnterPasscodeProps {
   onBack?: () => void;
@@ -76,7 +77,7 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
         const result = await apiService.loginWithPasscode(phoneNumber, fullPasscode);
         
         // Store authentication data
-        localStorage.setItem('swarp_fd_access_token', result.token);
+        setAccessToken(result.token);
         localStorage.setItem('swarp_fd_user', JSON.stringify(result.user));
         
         localStorage.removeItem('swarp_fd_login_method');
@@ -89,7 +90,7 @@ export const EnterPasscode: React.FC<EnterPasscodeProps> = ({
 
       } else {
         // Existing wallet PIN verification flow (e.g. Google / social login)
-        const token = localStorage.getItem('swarp_fd_access_token');
+        const token = getAccessToken();
         if (!token) {
           setError(t.onboarding?.enterPasscode?.errors?.tokenNotFound || 'Authentication token not found');
           return;

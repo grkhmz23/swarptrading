@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { HomeScreen } from '../../components/home/HomeScreen';
 import { useT } from '@/i18n/I18nProvider';
+import { getAccessToken } from '@/lib/session';
 
 export default function HomePage() {
   const t = useT();
@@ -12,7 +13,7 @@ export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('swarp_fd_access_token');
+    const token = getAccessToken();
     
     if (!token) {
       router.push('/');

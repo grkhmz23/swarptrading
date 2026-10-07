@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { apiService } from '@/services/api';
 import { Notification } from '@/types/Notification';
 import { useT } from '@/i18n/I18nProvider';
+import { getAccessToken } from '@/lib/session';
 
 interface NotificationModalProps {
   isOpen: boolean;
@@ -46,7 +47,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
       setIsLoading(true);
       setError(null);
 
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) return setError(t.notifications?.authRequired || 'Authentication required');
 
       const response = await apiService.getNotifications(token, { limit: 50 });

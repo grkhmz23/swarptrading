@@ -6,6 +6,7 @@ import { apiService } from '@/services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { getAccessToken } from '@/lib/session';
 
 interface ConfirmPasscodeProps {
   onBack?: () => void;
@@ -67,7 +68,7 @@ export const ConfirmPasscode: React.FC<ConfirmPasscodeProps> = ({
         setError('');
         
         try {
-          const token = localStorage.getItem('swarp_fd_access_token');
+          const token = getAccessToken();
           if (!token) {
             setError(t.onboarding?.confirmPasscode?.errors?.tokenNotFound || 'Authentication token not found');
             return;

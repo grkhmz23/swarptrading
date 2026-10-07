@@ -6,6 +6,7 @@ import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { apiService } from '../../services/api';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { getAccessToken } from '@/lib/session';
 
 interface ProfilePhotoProps {
   firstName?: string;
@@ -28,7 +29,7 @@ export const ProfilePhoto: React.FC<ProfilePhotoProps> = ({
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('swarp_fd_access_token') : null;
+  const token = typeof window !== 'undefined' ? getAccessToken() : null;
   localStorage.removeItem('swarp_fd_login_method');
 
   // Store refs for Enter key handler

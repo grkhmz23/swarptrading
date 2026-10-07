@@ -5,6 +5,7 @@ import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { apiService } from '../../services/api';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { getAccessToken } from '@/lib/session';
 
 interface ProfileSetupProps {
   email?: string;
@@ -40,7 +41,7 @@ export const ProfileSetup: React.FC<ProfileSetupProps> = ({
     setError('');
 
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) throw new Error('Authentication token not found');
 
       const payload = {

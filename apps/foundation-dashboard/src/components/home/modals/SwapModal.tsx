@@ -6,12 +6,15 @@ import { Toast } from '@/components/ui/Toast';
 import { useToast } from '@/hooks/useToast';
 import Image from 'next/image';
 import { useT } from '@/i18n/I18nProvider';
+import { getAccessToken } from '@/lib/session';
 interface SwapModalProps {
   walletId: string;
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (message: string) => void;
   onNavigateToWallet?: () => void;
+  /** Mint to preselect as the output token (e.g. from a token's "Buy" button). */
+  initialOutputMint?: string;
 }
 
 interface SwapQuote {
@@ -119,7 +122,7 @@ const loadTokens = useCallback(async () => {
 
 const loadInitialData = useCallback(async () => {
   try {
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
     if (!token) return;
 
     const balances = await apiService
@@ -175,7 +178,7 @@ const loadInitialData = useCallback(async () => {
     setError(null);
 
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         setError(t.modals?.swap?.errors?.authRequired || 'Authentication required');
         return;
@@ -207,7 +210,7 @@ const loadInitialData = useCallback(async () => {
     setError(null);
 
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         setError(t.modals?.swap?.errors?.authRequired || 'Authentication required');
         return;

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 interface Notification {
   id: string;
@@ -28,7 +29,7 @@ export default function Notifications() {
   }, []);
 
   const fetchNotifications = async () => {
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
     if (!token) return;
 
     try {
@@ -50,7 +51,7 @@ export default function Notifications() {
   };
 
   const handleNotificationClick = async (notification: Notification) => {
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
     if (!token || notification.isRead) return;
 
     try {

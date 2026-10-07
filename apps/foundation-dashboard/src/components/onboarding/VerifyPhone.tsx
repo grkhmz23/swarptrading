@@ -6,6 +6,7 @@ import { apiService, ApiError } from '../../services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { setAccessToken } from '@/lib/session';
 
 interface VerifyPhoneProps {
   onBack?: () => void;
@@ -151,7 +152,7 @@ const [, setDevelopmentOtp] = useState<string>('');
       });
 
       // Store the access token
-      localStorage.setItem('swarp_fd_access_token', result.token);
+      setAccessToken(result.token);
       localStorage.setItem('swarp_fd_user', JSON.stringify(result.user));
       
       // Note: Keep pendingPhoneNumber and isNewUser in localStorage for CreatingWallet component

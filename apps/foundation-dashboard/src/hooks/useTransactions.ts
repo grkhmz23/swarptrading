@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { apiService } from '@/services/api';
 import { Transaction, WalletData } from "@/types/home";
+import { getAccessToken } from '@/lib/session';
 
 interface FilterDropdownState {
   dateFilter: string;
@@ -47,7 +48,7 @@ export const useTransactions = (wallet: WalletData | null): UseTransactionsRetur
     try {
       setTransactionsLoading(true);
       setTransactionsError(null);
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
 
       if (!token) {
         setTransactionsError('Authentication token not found');

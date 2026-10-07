@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 // Project type from API
 interface Project {
@@ -34,7 +35,7 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
 
       // Fetch live projects (status = bonding)
       const projectsResponse = await apiService.getLaunchpadProjects({ status: "bonding", limit: 50 });
@@ -90,7 +91,7 @@ export default function AddAssetModal({ isOpen, onClose, onSave }: AddAssetModal
   };
 
   const handleSave = async () => {
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
 
     if (!token) {
       setError(t.launchpad?.watchlist?.loginRequired || "Please login to add to watchlist");

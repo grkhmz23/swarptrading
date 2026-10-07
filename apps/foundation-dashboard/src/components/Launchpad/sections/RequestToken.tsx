@@ -3,6 +3,7 @@
 import React, { useState, useRef } from "react";
 import { apiService, LaunchpadCustodialCreateRequest, ApiError } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 interface FormData {
   name: string;
@@ -150,7 +151,7 @@ export default function RequestToken() {
       return;
     }
 
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
     if (!token) {
       showToast("error", t.launchpad?.requestToken?.errors?.loginRequired || "Please log in to create a token");
       return;

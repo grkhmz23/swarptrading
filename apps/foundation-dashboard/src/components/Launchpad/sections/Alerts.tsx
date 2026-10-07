@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import CreateAlertModal from "../CreateAlertModal";
 import { apiService, LaunchpadAlert } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 // Format price for display
 const formatPrice = (price: string | number, currency: string): string => {
@@ -66,7 +67,7 @@ export default function Alerts() {
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) {
         setError(t.launchpad?.alerts?.loginRequired || "Please login to view your alerts");
         setIsLoading(false);
@@ -113,7 +114,7 @@ export default function Alerts() {
 
   const handleDeleteAlert = async (alertId: string) => {
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) return;
 
       await apiService.deleteLaunchpadAlert(alertId, token);

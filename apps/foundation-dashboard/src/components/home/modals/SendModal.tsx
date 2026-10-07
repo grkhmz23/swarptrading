@@ -6,6 +6,7 @@ import { Toast } from '@/components/ui/Toast';
 import { useToast } from '@/hooks/useToast';
 import { useT } from '@/i18n/I18nProvider';
 import Image from 'next/image';
+import { getAccessToken } from '@/lib/session';
 
 interface TokenBalance {
   token: string;
@@ -93,7 +94,7 @@ export const SendModal: React.FC<SendModalProps> = ({
 
   const loadTokenBalances = useCallback(async () => {
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) return;
 
       const balances = await apiService.getSwapTokenBalances(walletId, token);
@@ -201,7 +202,7 @@ export const SendModal: React.FC<SendModalProps> = ({
     setAddressValidationMessage(null);
 
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         setAddressValidationMessage(t.modals?.send?.errors?.authRequired || 'Authentication required');
         return false;
@@ -291,7 +292,7 @@ export const SendModal: React.FC<SendModalProps> = ({
 
     try {
       setIsLoading(true);
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         setError(t.modals?.send?.errors?.tokenNotFound || 'Authentication token not found');
         return;

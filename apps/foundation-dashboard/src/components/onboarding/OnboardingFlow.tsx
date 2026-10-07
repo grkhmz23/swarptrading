@@ -14,6 +14,7 @@ import { SetPasscode } from './SetPasscode';
 import { ConfirmPasscode } from './ConfirmPasscode';
 import { EnterPasscode } from './EnterPasscode';
 import ReferralCodeModal from './ReferralCodeModal';
+import { getAccessToken, setAccessToken } from '@/lib/session';
 
 type OnboardingStep = 'splash' | 'welcome' | 'signup-options' | 'signup-email' | 'verify-phone' | 'select-citizenship' | 'email-setup' | 'profile-setup' | 'profile-photo' | 'creating-wallet' | 'set-passcode' | 'confirm-passcode' | 'enter-passcode';
 
@@ -47,7 +48,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) =>
   const getInitialStep = (): OnboardingStep => {
     if (typeof window !== 'undefined') {
       const savedStep = localStorage.getItem('swarp_fd_onboarding_step') as OnboardingStep;
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       const wallet = localStorage.getItem('swarp_fd_wallet');
       
       if (savedStep && savedStep !== 'signup-email') {
@@ -303,7 +304,7 @@ useEffect(() => {
 
   if (token && email) {
 
-    localStorage.setItem('swarp_fd_access_token', token);
+    setAccessToken(token);
 
     const userData = {
       email,

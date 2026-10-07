@@ -7,6 +7,7 @@ import { apiService, ApiError } from '../../services/api';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { getAccessToken } from '@/lib/session';
 
 interface SelectCitizenshipProps {
   onBack?: () => void;
@@ -184,7 +185,7 @@ useEffect(() => {
       }
 
       // Apply referral if token is available
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (token) {
         await handleApplyReferral(token);
       }

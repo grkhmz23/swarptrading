@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 // Transaction type
 type TransactionType = "Buy" | "Sell";
@@ -119,7 +120,7 @@ export default function TradeHistory() {
   const fetchTradeHistory = useCallback(async () => {
     setIsLoading(true);
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) {
         setTransactions([]);
         return;

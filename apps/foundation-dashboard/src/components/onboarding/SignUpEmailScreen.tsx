@@ -11,6 +11,7 @@ import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import  ReferralCodeModal  from './ReferralCodeModal';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { setAccessToken } from '@/lib/session';
 
 interface SignUpEmailScreenProps {
   onBack?: () => void;
@@ -40,7 +41,7 @@ useEffect(() => {
 
   if (token) {
     // Store token and login method
-    localStorage.setItem('swarp_fd_access_token', token);
+    setAccessToken(token);
     localStorage.setItem('swarp_fd_login_method', 'google');
 
     // Persist newUser flag if provided

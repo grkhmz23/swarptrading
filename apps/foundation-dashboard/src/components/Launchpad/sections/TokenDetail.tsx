@@ -5,6 +5,7 @@ import { apiService, LaunchpadProject } from "@/services/api";
 import { Toast } from "@/components/ui/Toast";
 import { useT } from "@/i18n/I18nProvider";
 import dynamic from "next/dynamic";
+import { getAccessToken } from '@/lib/session';
 
 // Dynamic import for TradingViewChart to avoid SSR issues with lightweight-charts
 const TradingViewChart = dynamic(
@@ -300,7 +301,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
 
   const fetchWalletBalance = useCallback(async () => {
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) return;
 
       const wallets = await apiService.getUserWallets(accessToken);
@@ -316,7 +317,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     setIsLoading(true);
     setError(null);
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       const response = await apiService.getLaunchpadProject(projectId, accessToken);
       setProject(response);
     } catch (err) {
@@ -377,7 +378,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   const fetchUserPortfolio = useCallback(async () => {
     setIsLoadingPortfolio(true);
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) {
         setUserInvestment(null);
         return;
@@ -415,7 +416,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   const fetchUserTradeHistory = useCallback(async () => {
     setIsLoadingTradeHistory(true);
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) {
         setUserTradeHistory([]);
         return;
@@ -446,7 +447,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
 
   const fetchWatchlistStatus = useCallback(async () => {
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token");
+      const accessToken = getAccessToken();
       if (!accessToken) {
         setIsWatching(false);
         return;
@@ -475,7 +476,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
   }, [fetchProject, fetchWalletBalance, fetchTrades, fetchHolders, fetchUserPortfolio, fetchUserTradeHistory, fetchWatchlistStatus]);
 
   const handleToggleWatchlist = async () => {
-    const accessToken = localStorage.getItem("swarp_fd_access_token");
+    const accessToken = getAccessToken();
     if (!accessToken) {
       setTradeError(t.launchpad?.tokenDetail?.toast?.loginToAddWatchlist || "Please log in to add to watchlist");
       return;
@@ -576,7 +577,7 @@ export default function TokenDetail({ projectId, onBack }: TokenDetailProps) {
     setShowToast(false);
 
     try {
-      const accessToken = localStorage.getItem("swarp_fd_access_token") || "";
+      const accessToken = getAccessToken() || "";
 
       const slippageValue = 5; // Default 5% slippage tolerance
 

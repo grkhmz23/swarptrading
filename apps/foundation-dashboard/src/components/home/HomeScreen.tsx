@@ -22,6 +22,7 @@ import { Toast } from '@/components/ui/Toast';
 import { useToast } from '@/hooks/useToast';
 import { moonPayService } from '@/services/moonpay';
 import { veriffService } from '@/services/veriff';
+import { isLikelySolanaAddress } from '@/lib/solana';
 import { balanceSyncService } from '@/services/balanceSync';
 import SettingsPage from "@/app/settings/page";
 import Image from 'next/image';
@@ -46,6 +47,7 @@ import {
   Transaction,
   JupiterToken,
 } from '@/types/home';
+import { getAccessToken } from '@/lib/session';
 
 const navigationItemsBase = [
   { key: 'home' as const, icon: 'home', route: '/dashboard' },
@@ -104,6 +106,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onLogout }) => {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
+  const [swapOutputMint, setSwapOutputMint] = useState<string | undefined>(undefined);
+  const openSwapForToken = useCallback((mint: string) => {
+    setSwapOutputMint(mint);
+    setShowSwapModal(true);
+  }, []);
+
+  // Deep link from /token/[address]: /dashboard?swap=<mint> opens the swap with that token preselected.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mint = params.get('swap');
+    if (mint && isLikelySolanaAddress(mint)) {
+      openSwapForToken(mint);
+      params.delete('swap');
+      const rest = params.toString();
+      window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+    }
+  }, [openSwapForToken]);
   const [showUsernameModal, setShowUsernameModal] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showTopUpModal, setShowTopUpModal] = useState(false);
@@ -323,7 +342,7 @@ const currency = useSelector((state: RootState) => state.settings.currency);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    setAuthToken(localStorage.getItem('swarp_fd_access_token'));
+    setAuthToken(getAccessToken());
   }, []);
     // ✅ Reward list (main) - derived from Redux store (fetched from API)
     const dispatch = useDispatch<AppDispatch>();
@@ -630,7 +649,7 @@ useEffect(() => {
       
       if (syncResult.success && syncResult.difference && syncResult.difference > 0) {
         // Sync the balance to backend devnet wallet
-        const token = localStorage.getItem('swarp_fd_access_token');
+        const token = getAccessToken();
         if (token) {
           try {
             const backendSyncResult = await apiService.syncMoonPayBalance(
@@ -691,7 +710,7 @@ useEffect(() => {
   //   if (!wallet) return;
   //
   //   try {
-  //     const token = localStorage.getItem('swarp_fd_access_token');
+  //     const token = getAccessToken();
   //     if (!token) return;
   //
   //     setTokenBalancesLoading(true);
@@ -712,7 +731,7 @@ useEffect(() => {
     try {
       setTransactionsLoading(true);
       setTransactionsError(null);
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       
       if (!token) {
         setTransactionsError('Authentication token not found');
@@ -855,7 +874,7 @@ useEffect(() => {
 
   const loadWalletData = async () => {
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       
       if (!token) {
         console.error('❌ No authentication token found');
@@ -918,7 +937,7 @@ useEffect(() => {
 
   const loadUserProfile = async () => {
     try {
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) return;
 
       const profile = await apiService.getUserProfile(token);
@@ -1030,7 +1049,7 @@ useEffect(() => {
   //   if (!wallet) return;
   //
   //   try {
-  //     const token = localStorage.getItem('swarp_fd_access_token');
+  //     const token = getAccessToken();
   //     if (!token) {
   //       setError('Authentication token not found');
   //       return;
@@ -1368,7 +1387,7 @@ const handleNotificationClick = (notification: Notification) => {
 
     try {
       setVerifyLoading(true);
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         showError(t.common?.authTokenNotFound || 'Authentication token not found', 'top-right');
         return;
@@ -1567,7 +1586,7 @@ const handleNotificationClick = (notification: Notification) => {
                 t={t}
                 tokenAddress={selectedTokenAddress}
                 onBack={() => setSelectedTokenAddress(null)}
-                setShowSwapModal={setShowSwapModal}
+                onBuy={openSwapForToken}
               />
             ) : (
               <TradeSection
@@ -1832,7 +1851,11 @@ const handleNotificationClick = (notification: Notification) => {
           <SwapModal
             walletId={wallet.id}
             isOpen={showSwapModal}
-            onClose={() => setShowSwapModal(false)}
+            initialOutputMint={swapOutputMint}
+            onClose={() => {
+              setShowSwapModal(false);
+              setSwapOutputMint(undefined);
+            }}
             onSuccess={handleSwapSuccess}
             onNavigateToWallet={() => setCurrentSection('Wallet')}
           />

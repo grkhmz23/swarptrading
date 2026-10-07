@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { apiService } from '@/services/api';
 import { useT } from '@/i18n/I18nProvider';
+import { getAccessToken } from '@/lib/session';
 
 interface UsernameModalProps {
   isOpen: boolean;
@@ -61,7 +62,7 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
     try {
       setIsLoading(true);
       setError(null);
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         setError(t.modals?.username?.errors?.authRequired || 'Authentication required');
         return;
@@ -119,7 +120,7 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
         message: ''
       });
 
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         setValidationStatus({
           isChecking: false,
@@ -208,7 +209,7 @@ export const UsernameModal: React.FC<UsernameModalProps> = ({
     try {
       setIsSubmitting(true);
       setError(null);
-      const token = localStorage.getItem('swarp_fd_access_token');
+      const token = getAccessToken();
       if (!token) {
         setError(t.modals?.username?.errors?.authRequired || 'Authentication required');
         return;

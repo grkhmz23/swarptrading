@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { apiService, LaunchpadProject, LaunchpadAlert } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 interface CreateAlertModalProps {
   isOpen: boolean;
@@ -108,7 +109,7 @@ export default function CreateAlertModal({
       return;
     }
 
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
     if (!token) {
       setError(t.launchpad?.alerts?.errors?.loginToCreate || "Please login to create alerts");
       return;

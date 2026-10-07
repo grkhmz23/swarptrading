@@ -9,13 +9,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Swarp Foundation Dashboard",
-  description: "Swarp Foundation crypto dashboard. Token launches, wallet, portfolio, staking, rewards, and trading tools.",
-  keywords: ["crypto", "payments", "crypto dashboard", "blockchain"],
+  title: "SwarpPay",
+  description: "SwarpPay wallet and SwarpLaunch launchpad.",
   authors: [{ name: "Swarp Foundation" }],
   creator: "Swarp Foundation",
   publisher: "Swarp Foundation",
-  robots: "index, follow",
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {

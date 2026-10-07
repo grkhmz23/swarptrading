@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from 'next/navigation';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { useT } from '@/i18n/I18nProvider';
+import { getAccessToken } from '@/lib/session';
 
 export default function Home() {
   const t = useT();
@@ -12,7 +13,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('swarp_fd_access_token');
+    const token = getAccessToken();
     const wallet = localStorage.getItem('swarp_fd_wallet');
     const onboardingComplete = localStorage.getItem('swarp_fd_onboarding_complete');
 
