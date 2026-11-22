@@ -8,9 +8,10 @@ SwarpPay and SwarpLaunch front-ends, split out of
 | --- | --- | --- |
 | `apps/foundation-dashboard` | Next.js 16, React 19, Redux, `@solana/web3.js` | Custodial Solana wallet, swap, SwarpLaunch launchpad. Target: `app.swarppay.com` |
 | `apps/foundation-admin` | Vite, React 19, Refine | Admin console: users, wallets, transactions, launchpad projects |
+| `apps/api` | NestJS 12, Fastify, PostgreSQL | **The real backend, being built step by step** (step 1: sign-in, sessions, wallet PIN). See [`docs/BACKEND_PLAN.md`](docs/BACKEND_PLAN.md) and `apps/api/README.md` |
 | `apps/preview-api` | Next.js route handlers | **Preview only.** Answers the dashboard's API calls with sample data so the UI can be shown without the real backend. Cannot move funds. |
 
-The real backend API both apps call is **not** in this repository.
+The original backend was lost; its replacement is `apps/api`.
 
 ## Run
 
@@ -47,5 +48,5 @@ in [`docs/BACKEND_REQUIREMENTS.md`](docs/BACKEND_REQUIREMENTS.md).
 ## Checks
 
 CI (`.github/workflows/build.yml`) runs, for each app: type-check, lint, tests
-(dashboard, preview-api), `npm audit --omit=dev --audit-level=high`, and a
-production build.
+(dashboard, preview-api, and api against a PostgreSQL service),
+`npm audit --omit=dev --audit-level=high`, and a production build.
