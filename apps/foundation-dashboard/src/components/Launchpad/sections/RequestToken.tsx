@@ -1,8 +1,28 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { apiService, LaunchpadCustodialCreateRequest, ApiError } from "@/services/api";
+import { apiService, LaunchpadCustodialCreateRequest } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
+import { errorMessage } from "@/lib/http";
+import { explorerUrl, NETWORK_LABEL } from "@/config/env";
+import { PinConfirmModal } from "@/components/ui/PinConfirmModal";
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Metaplex token metadata limits. */
+const MAX_NAME_LENGTH = 32;
+const MAX_TICKER_LENGTH = 10;
+const TICKER_PATTERN = new RegExp(`^[A-Z0-9]{2,${MAX_TICKER_LENGTH}}$`);
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
 
 interface FormData {
   name: string;
@@ -42,12 +62,15 @@ export default function RequestToken() {
   const [successModal, setSuccessModal] = useState<SuccessModalData | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: "error" | "success" | "info"; message: string } | null>(null);
+  const [confirmingCreate, setConfirmingCreate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Show toast notification
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = (type: "error" | "success" | "info", message: string) => {
     setToast({ type, message });
-    setTimeout(() => setToast(null), 4000);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
   };
 
   const maxDescriptionLength = 100;
@@ -59,24 +82,31 @@ export default function RequestToken() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  /** Validate type and size before reading the file into memory. */
+  const acceptImage = (file: File) => {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      showToast("error", t.launchpad?.requestToken?.errors?.invalidImageFile || "Please upload a JPG, PNG, GIF or WebP image");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      showToast("error", `Image must be ${MAX_IMAGE_BYTES / (1024 * 1024)} MB or smaller`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFormData((prev) => ({
+        ...prev,
+        image: file,
+        imagePreview: reader.result as string,
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const validTypes = ["image/jpeg", "image/png", "image/svg+xml", "image/gif", "video/mp4"];
-      if (!validTypes.includes(file.type)) {
-        showToast("error", t.launchpad?.requestToken?.errors?.invalidImageFile || "Please upload a valid image file (JPG, PNG, SVG, GIF, or MP4)");
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prev) => ({
-          ...prev,
-          image: file,
-          imagePreview: reader.result as string,
-        }));
-      };
-      reader.readAsDataURL(file);
+      acceptImage(file);
     }
   };
 
@@ -84,21 +114,7 @@ export default function RequestToken() {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file) {
-      const validTypes = ["image/jpeg", "image/png", "image/svg+xml", "image/gif", "video/mp4"];
-      if (!validTypes.includes(file.type)) {
-        showToast("error", t.launchpad?.requestToken?.errors?.invalidImageFile || "Please upload a valid image file (JPG, PNG, SVG, GIF, or MP4)");
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData((prev) => ({
-          ...prev,
-          image: file,
-          imagePreview: reader.result as string,
-        }));
-      };
-      reader.readAsDataURL(file);
+      acceptImage(file);
     }
   };
 
@@ -130,8 +146,8 @@ export default function RequestToken() {
       await navigator.clipboard.writeText(text);
       setCopiedField(field);
       setTimeout(() => setCopiedField(null), 2000);
-    } catch (err) {
-      console.error("Failed to copy:", err);
+    } catch {
+      // Clipboard access can be denied; nothing to recover.
     }
   };
 
@@ -140,48 +156,67 @@ export default function RequestToken() {
     handleCancel();
   };
 
-  const handleSubmit = async () => {
-    if (!formData.name.trim()) {
+  /** Validate the form, then ask for the PIN: minting is irreversible. */
+  const handleSubmit = () => {
+    const name = formData.name.trim();
+    const ticker = formData.ticker.trim().toUpperCase();
+    if (!name) {
       showToast("error", t.launchpad?.requestToken?.errors?.enterTokenName || "Please enter a token name");
       return;
     }
-    if (!formData.ticker.trim()) {
+    if (name.length > MAX_NAME_LENGTH) {
+      showToast("error", `Token name must be ${MAX_NAME_LENGTH} characters or fewer`);
+      return;
+    }
+    if (!ticker) {
       showToast("error", t.launchpad?.requestToken?.errors?.enterTokenTicker || "Please enter a token ticker");
       return;
     }
-
-    const token = localStorage.getItem("swarp_fd_access_token");
-    if (!token) {
+    if (!TICKER_PATTERN.test(ticker)) {
+      showToast("error", `Ticker must be 2-${MAX_TICKER_LENGTH} letters or digits`);
+      return;
+    }
+    for (const [label, value] of [
+      ["Website", formData.websiteUrl],
+      ["X / Twitter", formData.twitterUrl],
+      ["Telegram", formData.telegramUrl],
+      ["Discord", formData.discordUrl],
+    ] as const) {
+      if (value.trim() && !isHttpsUrl(value.trim())) {
+        showToast("error", `${label} link must be a valid https:// URL`);
+        return;
+      }
+    }
+    if (!getAccessToken()) {
       showToast("error", t.launchpad?.requestToken?.errors?.loginRequired || "Please log in to create a token");
       return;
     }
+    setConfirmingCreate(true);
+  };
+
+  const createToken = async () => {
+    const token = getAccessToken();
+    if (!token) throw new Error(t.launchpad?.requestToken?.errors?.loginRequired || "Please log in to create a token");
 
     setIsSubmitting(true);
-
     try {
       let imageUrl: string | undefined;
       if (formData.image) {
         try {
-          const uploadResponse = await apiService.uploadLaunchpadProjectImage(
-            formData.image,
-            token
-          );
+          const uploadResponse = await apiService.uploadLaunchpadProjectImage(formData.image, token);
           imageUrl = uploadResponse.imageUrl;
         } catch (uploadError) {
-          console.error("Failed to upload image:", uploadError);
-          const errorMessage = (uploadError as ApiError)?.message || t.launchpad?.requestToken?.errors?.uploadImageFailed || "Failed to upload image";
-          showToast("error", errorMessage);
-          setIsSubmitting(false);
-          return;
+          throw new Error(errorMessage(uploadError, t.launchpad?.requestToken?.errors?.uploadImageFailed || "Failed to upload image"));
         }
       }
 
+      // metadataUri is left to the backend, which must build the Metaplex JSON
+      // (name, symbol, image) — an image URL is not a metadata document.
       const custodialData: LaunchpadCustodialCreateRequest = {
         name: formData.name.trim(),
         ticker: formData.ticker.trim().toUpperCase(),
         description: formData.description.trim() || undefined,
         imageUrl,
-        metadataUri: imageUrl || undefined,
         websiteUrl: formData.websiteUrl.trim() || undefined,
         twitterUrl: formData.twitterUrl.trim() || undefined,
         telegramUrl: formData.telegramUrl.trim() || undefined,
@@ -189,17 +224,14 @@ export default function RequestToken() {
       };
 
       const response = await apiService.createLaunchpadTokenCustodial(custodialData, token);
-
-      // Show success modal instead of alert
+      setConfirmingCreate(false);
       setSuccessModal({
         tokenName: formData.name,
         tokenMint: response.tokenMint,
         transactionSignature: response.transactionSignature,
       });
     } catch (error) {
-      console.error("Failed to create token:", error);
-      const errorMessage = (error as ApiError)?.message || t.launchpad?.requestToken?.errors?.createTokenFailed || "Failed to create token. Please try again.";
-      showToast("error", errorMessage);
+      throw new Error(errorMessage(error, t.launchpad?.requestToken?.errors?.createTokenFailed || "Failed to create token. Please try again."));
     } finally {
       setIsSubmitting(false);
     }
@@ -227,6 +259,7 @@ export default function RequestToken() {
                 type="text"
                 placeholder={t.launchpad?.requestToken?.namePlaceholder || "Add token name"}
                 value={formData.name}
+                maxLength={MAX_NAME_LENGTH}
                 onChange={(e) => handleInputChange("name", e.target.value)}
                 className="w-full !px-3 !py-3.5 bg-[#131519] border border-[#2B2D30] rounded-xl text-white text-sm placeholder-[#636466] outline-none focus:border-[#40E0D0] transition-colors"
               />
@@ -244,6 +277,7 @@ export default function RequestToken() {
                 type="text"
                 placeholder={t.launchpad?.requestToken?.tickerPlaceholder || "Add a token ticker (e.g. DOGE)"}
                 value={formData.ticker}
+                maxLength={MAX_TICKER_LENGTH}
                 onChange={(e) => handleInputChange("ticker", e.target.value.toUpperCase())}
                 className="w-full !px-3 !py-3.5 bg-[#131519] border border-[#2B2D30] rounded-xl text-white text-sm placeholder-[#636466] outline-none focus:border-[#40E0D0] transition-colors uppercase"
               />
@@ -294,6 +328,7 @@ export default function RequestToken() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setFormData((prev) => ({ ...prev, image: null, imagePreview: null }));
+                      if (fileInputRef.current) fileInputRef.current.value = "";
                     }}
                     className="absolute top-2 right-2 w-6 h-6 bg-black/50 rounded-full flex items-center justify-center hover:bg-black/70"
                   >
@@ -315,7 +350,7 @@ export default function RequestToken() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/svg+xml,image/gif,video/mp4"
+                accept={ALLOWED_IMAGE_TYPES.join(",")}
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -550,7 +585,7 @@ export default function RequestToken() {
 
             {/* View on Explorer Link */}
             <a
-              href={`https://explorer.solana.com/address/${successModal.tokenMint}?cluster=devnet`}
+              href={explorerUrl("address", successModal.tokenMint)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center !gap-2 !mt-4 text-[#40E0D0] text-sm hover:underline"
@@ -613,6 +648,19 @@ export default function RequestToken() {
           </div>
         </div>
       )}
+      <PinConfirmModal
+        isOpen={confirmingCreate}
+        title="Create token"
+        confirmLabel="Create"
+        summary={[
+          { label: "Name", value: formData.name.trim() },
+          { label: "Ticker", value: formData.ticker.trim().toUpperCase() },
+          { label: "Network", value: NETWORK_LABEL },
+          { label: "Note", value: "Name and ticker cannot be changed later" },
+        ]}
+        onCancel={() => setConfirmingCreate(false)}
+        onConfirmed={createToken}
+      />
     </div>
   );
 }

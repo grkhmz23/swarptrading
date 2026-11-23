@@ -5,6 +5,7 @@ import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { apiService } from "@/services/api";
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { LegalNotice } from '../ui/LegalNotice';
 
 interface EmailSetupProps {
   onBack?: () => void;
@@ -141,25 +142,7 @@ const handleContinue = async () => {
         <div className='flex flex-col gap-2 justify-center items-center pb-4'>
           <div className='flex flex-col gap-4 justify-center items-center mt-4'>
             <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
-            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
-              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
-              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
-              </a>.
-            </p>
+            <LegalNotice />
             
             
          

@@ -4,7 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import { PriceChart } from './PriceChart';
 import ProgressSection from './ProgressSection';
-import { WalletData, MarketData, Transaction } from '@/types/home';
+import { WalletData, MarketData, Transaction, transactionSymbol } from '@/types/home';
 import type { TranslationKeys } from '@/i18n';
 
 interface UserState {
@@ -17,11 +17,14 @@ interface UserProfile {
   username?: string;
   firstName: string;
   lastName: string;
+  usernamePromptDismissed?: boolean;
 }
 
 interface HomeSectionProps {
   t: TranslationKeys;
   wallet: WalletData | null;
+  /** At least one completed swap in the wallet's swap history. */
+  hasCompletedSwap: boolean;
   user: UserState;
   userProfile: UserProfile | null;
   marketData: MarketData | null;
@@ -32,14 +35,12 @@ interface HomeSectionProps {
   transactions: Transaction[];
   transactionsLoading: boolean;
   transactionsError: string | null;
-  mainnetBalance: number;
-  isBalanceSyncing: boolean;
   portfolioValue?: number;
   moonPayLoading: boolean;
   verifyLoading?: boolean;
   kycStatus?: 'not_started' | 'pending' | 'approved' | 'declined' | 'resubmission_requested';
   currency: 'USD' | 'EUR' | 'GBP';
-  conversionRates: { USD: number; EUR: number; GBP: number };
+  conversionRates: { USD: number; EUR: number | null; GBP: number | null };
   // Handlers
   formatPublicKey: (key: string | null | undefined) => string;
   formatTransactionDate: (timestamp: string) => string;
@@ -47,9 +48,8 @@ interface HomeSectionProps {
   handleCopyAddress: () => void;
   handleOpenUsernameModal: () => void;
   handleCloseUsernameCard: () => void;
-  handleBalanceSync: () => void;
   handleTopUpClick: () => void;
-  handleMoonPaySell: () => void;
+  handleWithdraw: () => void;
   handleVerifyIdentity: () => void;
   loadTransactionHistory: () => void;
   setShowSendModal: (show: boolean) => void;
@@ -60,6 +60,7 @@ interface HomeSectionProps {
 export const HomeSection: React.FC<HomeSectionProps> = ({
   t,
   wallet,
+  hasCompletedSwap,
   user,
   userProfile,
   marketData,
@@ -70,8 +71,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
   transactions,
   transactionsLoading,
   transactionsError,
-  mainnetBalance,
-  isBalanceSyncing,
   portfolioValue,
   moonPayLoading,
   verifyLoading,
@@ -84,9 +83,8 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
   handleCopyAddress,
   handleOpenUsernameModal,
   handleCloseUsernameCard,
-  handleBalanceSync,
   handleTopUpClick,
-  handleMoonPaySell,
+  handleWithdraw,
   handleVerifyIdentity,
   loadTransactionHistory,
   setShowSendModal,
@@ -95,7 +93,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
 }) => {
   const walletT = t.wallet as Record<string, unknown> | undefined;
   const commonT = t.common as Record<string, string> | undefined;
-  const moonPayT = t.moonPay as Record<string, string> | undefined;
   const chartT = walletT?.chart as Record<string, string> | undefined;
   const transactionT = walletT?.transaction as Record<string, string> | undefined;
 
@@ -105,13 +102,11 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
     GBP: '£',
   };
 
-  const convertedPrice = marketData?.price
-    ? marketData.price * conversionRates[currency]
-    : 0;
-
-  const convertedChange = marketData?.change
-    ? marketData.change * conversionRates[currency]
-    : 0;
+  // Show the chosen currency only once its exchange rate is known; otherwise USD.
+  const displayCurrency: 'USD' | 'EUR' | 'GBP' = conversionRates[currency] ? currency : 'USD';
+  const rate = conversionRates[displayCurrency] ?? 1;
+  const convertedPrice = typeof marketData?.price === 'number' ? marketData.price * rate : null;
+  const convertedChange = typeof marketData?.change === 'number' ? marketData.change * rate : 0;
 
   return (
     <>
@@ -124,8 +119,8 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             handleVerifyIdentity={handleVerifyIdentity}
             verifyLoading={verifyLoading}
             kycStatus={kycStatus}
-            mainnetBalance={mainnetBalance}
-            hasSwapped={transactions.length > 0}
+            hasSwapped={hasCompletedSwap}
+            isWalletFunded={(wallet?.balance ?? 0) > 0}
           />
         </div>
 
@@ -174,7 +169,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             </div>
 
             {/* Username Card - Show only if no username set and not dismissed */}
-            {userProfile && !userProfile.username && userProfile.username !== 'dismissed' && (
+            {userProfile && !userProfile.username && !userProfile.usernamePromptDismissed && (
               <div className="bg-[#131519] rounded-xl !p-4 border border-[#2B2D30] !mb-6">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-gradient-to-r from-[#143536] rounded-full flex items-center justify-center">
@@ -214,7 +209,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
             )}
 
             {/* Username Display - Show if username is set */}
-            {userProfile?.username && userProfile.username !== 'dismissed' && (
+            {userProfile?.username && (
               <div className="bg-[#131519] rounded-xl !p-4 border border-[#2B2D30] !mb-6">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-gradient-to-r from-[#40E0D0] to-[#40E0D0]/80 rounded-full flex items-center justify-center">
@@ -257,36 +252,6 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                 {wallet ? `${wallet.balance.toFixed(6)} SOL` : '0.000000 SOL'}
               </p>
 
-              {/* Mainnet Balance Info */}
-              {mainnetBalance > 0 && (
-                <div className="!mt-3 !p-3 bg-[#40E0D0]/10 border border-[#40E0D0]/20 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[#40E0D0] text-sm font-medium">
-                        {moonPayT?.mainnetBalance || 'MoonPay Mainnet Balance'}
-                      </p>
-                      <p className="text-white text-lg font-semibold">{mainnetBalance.toFixed(6)} SOL</p>
-                    </div>
-                    <button
-                      onClick={handleBalanceSync}
-                      disabled={isBalanceSyncing}
-                      className="bg-[#40E0D0] text-[#090A11] !px-3 !py-1.5 rounded-full text-sm font-semibold hover:bg-[#40E0D0]/90 transition-colors disabled:opacity-50"
-                    >
-                      {isBalanceSyncing ? (
-                        <div className="flex items-center gap-1">
-                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#090A11]"></div>
-                          <span>{moonPayT?.syncing || 'Syncing...'}</span>
-                        </div>
-                      ) : (
-                        moonPayT?.syncToDevnet || 'Sync to Devnet'
-                      )}
-                    </button>
-                  </div>
-                  <p className="text-[#636466] text-xs !mt-1">
-                    {moonPayT?.purchasedVia || 'SOL purchased via MoonPay (on mainnet)'}
-                  </p>
-                </div>
-              )}
             </div>
 
             {/* Action Buttons */}
@@ -296,7 +261,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                 { icon: 'receive', label: (walletT?.receive as string) || 'Receive', action: () => setShowReceiveModal(true) },
                 { icon: 'swap', label: (walletT?.swap as string) || 'Swap', action: () => setShowSwapModal(true) },
                 { icon: 'topup', label: (walletT?.topUp as string) || 'Top up', action: handleTopUpClick },
-                { icon: 'withdraw', label: (walletT?.withdraw as string) || 'Withdraw', action: handleMoonPaySell }
+                { icon: 'withdraw', label: (walletT?.withdraw as string) || 'Withdraw', action: handleWithdraw }
               ].map((action) => (
                 <button
                   key={action.label}
@@ -349,15 +314,21 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                   <div className="animate-pulse bg-[#2B2D30] h-8 w-24 rounded"></div>
                 ) : (
                   <h4 className="text-white text-3xl font-semibold" style={{ fontFamily: "var(--font-heading)" }}>
-                    {currencySymbol[currency]}
-                    {convertedPrice?.toFixed(2) ?? "240.75"}
+                    {convertedPrice === null ? (
+                      <span className="text-[#636466] text-lg">Price unavailable</span>
+                    ) : (
+                      <>
+                        {currencySymbol[displayCurrency]}
+                        {convertedPrice.toFixed(2)}
+                      </>
+                    )}
                   </h4>
                 )}
 
                 {marketData && (
                   <p className={`text-sm font-medium ${convertedChange >= 0 ? "text-[#40E0D0]" : "text-red-500"}`}>
                     {convertedChange >= 0 ? "+" : "-"}
-                    {currencySymbol[currency]}
+                    {currencySymbol[displayCurrency]}
                     {Math.abs(convertedChange).toFixed(2)} ({marketData.changePercent?.toFixed(1) ?? "0"}%)
                   </p>
                 )}
@@ -493,7 +464,9 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                         <h4 className="text-white text-sm font-medium" style={{ fontFamily: 'var(--font-heading)' }}>
                           {transaction.isMoonPay
                             ? (transaction.type === 'RECEIVE' ? (transactionT?.boughtSol || 'Bought SOL') : (transactionT?.soldSol || 'Sold SOL'))
-                            : (transaction.type === 'SEND' ? (transactionT?.sentSol || 'Sent SOL') : (transactionT?.receivedSol || 'Received SOL'))
+                            : transaction.tokenMint
+                              ? `${transaction.type === 'SEND' ? 'Sent' : 'Received'} ${transactionSymbol(transaction)}`
+                              : (transaction.type === 'SEND' ? (transactionT?.sentSol || 'Sent SOL') : (transactionT?.receivedSol || 'Received SOL'))
                           }
                         </h4>
                         {transaction.isMoonPay && (
@@ -519,7 +492,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({
                   </div>
                   <div className="text-right">
                     <p className={`text-sm font-semibold ${transaction.type === 'RECEIVE' ? 'text-[#40E0D0]' : 'text-white'}`}>
-                      {transaction.type === 'RECEIVE' ? '+' : '-'}{Number(transaction.amount).toFixed(6)} SOL
+                      {transaction.type === 'RECEIVE' ? '+' : '-'}{Number(transaction.amount).toFixed(6)} {transactionSymbol(transaction)}
                     </p>
                     <p className="text-[#636466] text-xs">
                       {transactionT?.fee || "Fee"}: {Number(transaction.fee).toFixed(6)} SOL

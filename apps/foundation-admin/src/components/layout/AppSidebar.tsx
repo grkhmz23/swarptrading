@@ -1,5 +1,5 @@
 import React from "react";
-import { useMenu, useLogout } from "@refinedev/core";
+import { useMenu, useLogout, useGetIdentity } from "@refinedev/core";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -15,52 +15,33 @@ import {
 } from "@/components/ui/sidebar";
 import {
   UsersIcon,
-  ShoppingCartIcon,
-  PhotoIcon,
-  TagIcon,
-  RectangleStackIcon,
-  BuildingStorefrontIcon,
-  UserGroupIcon,
-  TruckIcon,
-  StarIcon,
+  WalletIcon,
   CurrencyDollarIcon,
-  BellIcon,
-  ChatBubbleLeftRightIcon,
-  EnvelopeIcon,
-  BuildingLibraryIcon,
   ChartBarSquareIcon,
   ArrowLeftStartOnRectangleIcon,
-  CubeIcon,
-  BuildingOffice2Icon,
   Squares2X2Icon,
   RocketLaunchIcon,
 } from "@heroicons/react/24/outline";
+import type { AdminIdentity } from "@/auth/session";
 
 const iconMap: Record<string, React.ComponentType<React.SVGProps<SVGSVGElement>>> = {
-  "dashboard": ChartBarSquareIcon,
-  "user": UsersIcon,
+  dashboard: ChartBarSquareIcon,
+  user: UsersIcon,
+  wallet: WalletIcon,
+  transaction: CurrencyDollarIcon,
   "launchpad-project": RocketLaunchIcon,
-  "products": CubeIcon,
-  "order": ShoppingCartIcon,
-  "productimage": PhotoIcon,
-  "categories": RectangleStackIcon,
-  "businesstypes": BuildingOffice2Icon,
-  "materials": TagIcon,
-  "sellers": BuildingStorefrontIcon,
-  "buyers": UserGroupIcon,
-  "riders": TruckIcon,
-  "productreviews": StarIcon,
-  "sellerreviews": StarIcon,
-  "transactions": CurrencyDollarIcon,
-  "notifications": BellIcon,
-  "chats": ChatBubbleLeftRightIcon,
-  "messages": EnvelopeIcon,
-  "banks": BuildingLibraryIcon,
+};
+
+const roleLabel: Record<AdminIdentity["role"], string> = {
+  superadmin: "Super admin",
+  admin: "Admin",
+  viewer: "Read-only",
 };
 
 export const AppSidebar: React.FC = () => {
   const { menuItems } = useMenu();
   const { mutate: logout } = useLogout();
+  const { data: identity } = useGetIdentity<AdminIdentity | null>();
   const location = useLocation();
 
   return (
@@ -74,19 +55,13 @@ export const AppSidebar: React.FC = () => {
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => {
-                const Icon = iconMap[item.key] || iconMap[item.name] || Squares2X2Icon;
-                // Exact matching - only highlight if exact route or detail/edit pages (not sub-resources)
-                let isActive = false;
-                if (item.route === "/") {
-                  isActive = location.pathname === "/";
-                } else if (item.route) {
-                  // Exact match or detail/edit pages, but NOT other routes like /sellers/pending
-                  isActive = location.pathname === item.route ||
-                    (location.pathname.startsWith(item.route + "/") &&
-                     (location.pathname.includes("/show/") ||
-                      location.pathname.includes("/edit/") ||
-                      location.pathname.includes("/create")));
-                }
+                const Icon = iconMap[item.name] ?? Squares2X2Icon;
+                // Highlight the resource for its list route and its show/edit pages.
+                const isActive =
+                  item.route === "/"
+                    ? location.pathname === "/"
+                    : Boolean(item.route) &&
+                      (location.pathname === item.route || location.pathname.startsWith(`${item.route}/`));
 
                 return (
                   <SidebarMenuItem key={item.key}>
@@ -107,6 +82,12 @@ export const AppSidebar: React.FC = () => {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-4">
+        {identity && (
+          <div className="px-2 pb-2 text-xs text-muted-foreground">
+            {identity.email && <p className="truncate">{identity.email}</p>}
+            <p>{roleLabel[identity.role]}</p>
+          </div>
+        )}
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={() => logout()}>

@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { apiService, LaunchpadProject, LaunchpadAlert } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
+import { errorMessage } from '@/lib/http';
+import { parseAmount, isAmountInput, floorToDecimals } from '@/lib/amount';
 
 interface CreateAlertModalProps {
   isOpen: boolean;
@@ -11,80 +14,113 @@ interface CreateAlertModalProps {
   editAlert?: LaunchpadAlert | null;
 }
 
-export default function CreateAlertModal({
-  isOpen,
+type AlertCurrency = "SOL" | "USD";
+
+/** Maximum fractional digits accepted for a target price (bonding-curve prices can be ~1e-9 SOL). */
+const PRICE_DECIMALS = 12;
+const MAX_NOTE_LENGTH = 50;
+
+/** A project's current price, in SOL per token. */
+const projectPriceInSol = (project: LaunchpadProject): number | null => {
+  const value = typeof project.price === "number" ? project.price : Number(project.currentPrice);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+/** Significant-digit formatting so tiny prices (e.g. 5e-8) stay readable. */
+const formatSolPrice = (value: number): string => {
+  if (value >= 1) return `${value.toLocaleString("en-US", { maximumFractionDigits: 4 })} SOL`;
+  const rounded = Number(value.toPrecision(4));
+  return `${value < 0.0001 ? rounded.toExponential() : String(rounded)} SOL`;
+};
+
+/** Turn a stored target price (string, possibly exponent form) into plain decimal input text. */
+const toPriceInput = (value: string | number): string => {
+  const text = String(value).trim();
+  const num = Number(text);
+  if (!Number.isFinite(num) || num <= 0) return "";
+  if (/^\d+(\.\d+)?$/.test(text)) {
+    const trimmed = text.includes(".") ? text.replace(/0+$/, "").replace(/\.$/, "") : text;
+    if ((trimmed.split(".")[1] ?? "").length <= PRICE_DECIMALS) return trimmed;
+  }
+  return floorToDecimals(num, PRICE_DECIMALS);
+};
+
+export default function CreateAlertModal({ isOpen, onClose, onSave, editAlert }: CreateAlertModalProps) {
+  if (!isOpen) return null;
+  // Mounted fresh on every open (keyed by the alert) so the form always starts from the right values.
+  return (
+    <CreateAlertForm
+      key={editAlert?.id ?? "new"}
+      onClose={onClose}
+      onSave={onSave}
+      editAlert={editAlert ?? null}
+    />
+  );
+}
+
+function CreateAlertForm({
   onClose,
   onSave,
   editAlert,
-}: CreateAlertModalProps) {
+}: Omit<CreateAlertModalProps, "isOpen" | "editAlert"> & { editAlert: LaunchpadAlert | null }) {
   const t = useT();
+  const isEditing = editAlert !== null;
   const [projects, setProjects] = useState<LaunchpadProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<LaunchpadProject | null>(null);
-  const [condition, setCondition] = useState<"goes_over" | "goes_under">("goes_over");
-  const [targetPrice, setTargetPrice] = useState("");
-  const [note, setNote] = useState("");
+  // When editing, the token is fixed (the update API cannot change it), so its price is fetched directly.
+  const [editProjectPrice, setEditProjectPrice] = useState<number | null>(null);
+  const [condition, setCondition] = useState<"goes_over" | "goes_under">(editAlert?.condition ?? "goes_over");
+  // Launchpad tokens are priced in SOL, so SOL is the default; an edited alert keeps its own currency.
+  const [currency, setCurrency] = useState<AlertCurrency>(editAlert?.currency === "USD" ? "USD" : "SOL");
+  const [targetPrice, setTargetPrice] = useState(() => (editAlert ? toPriceInput(editAlert.targetPrice) : ""));
+  const [note, setNote] = useState(editAlert?.note ?? "");
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [isConditionDropdownOpen, setIsConditionDropdownOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const MAX_NOTE_LENGTH = 50;
-
-  const fetchProjects = useCallback(async () => {
-    setIsLoading(true);
+  const loadData = useCallback(async () => {
     try {
-      const response = await apiService.getLaunchpadProjects({ status: "bonding", limit: 50 });
-      setProjects(response.projects || []);
+      if (editAlert) {
+        const project = await apiService.getLaunchpadProject(editAlert.projectId, getAccessToken());
+        setEditProjectPrice(projectPriceInSol(project));
+      } else {
+        const response = await apiService.getLaunchpadProjects({ status: "bonding", limit: 50 });
+        setProjects(response.projects || []);
+      }
+      setLoadError(null);
     } catch (err) {
-      console.error("Failed to fetch projects:", err);
-      setError(t.launchpad?.alerts?.failedToLoad || "Failed to load projects");
+      setLoadError(
+        errorMessage(
+          err,
+          editAlert ? "Could not load the token's current price" : t.launchpad?.alerts?.failedToLoad || "Failed to load tokens"
+        )
+      );
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [editAlert, t]);
 
-  // Initialize form when modal opens
   useEffect(() => {
-    if (isOpen) {
-      fetchProjects();
+    void loadData();
+  }, [loadData]);
 
-      if (editAlert) {
-        // Populate form with existing alert data
-        setCondition(editAlert.condition);
-        setTargetPrice(editAlert.targetPrice.toString());
-        setNote(editAlert.note || "");
-        // Find and set the project
-        const project = projects.find((p) => p.id === editAlert.projectId);
-        if (project) {
-          setSelectedProject(project);
-        }
-      } else {
-        // Reset form
-        setSelectedProject(null);
-        setCondition("goes_over");
-        setTargetPrice("");
-        setNote("");
-      }
-      setError(null);
-    }
-  }, [isOpen, editAlert, fetchProjects]);
+  const handleRetryLoad = () => {
+    setIsLoading(true);
+    setLoadError(null);
+    void loadData();
+  };
 
-  // Update selected project when projects load and editing
-  useEffect(() => {
-    if (editAlert && projects.length > 0) {
-      const project = projects.find((p) => p.id === editAlert.projectId);
-      if (project) {
-        setSelectedProject(project);
-      }
-    }
-  }, [editAlert, projects]);
-
-  if (!isOpen) return null;
+  const handleClose = () => {
+    if (isSaving) return;
+    onClose();
+  };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -96,19 +132,40 @@ export default function CreateAlertModal({
     }
   };
 
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (isAmountInput(value)) {
+      setTargetPrice(value);
+    }
+  };
+
+  const projectId = editAlert ? editAlert.projectId : selectedProject?.id ?? null;
+  const tokenLabel = editAlert
+    ? `${editAlert.projectName} (${editAlert.projectTicker})`
+    : selectedProject
+      ? `${selectedProject.name} (${selectedProject.ticker})`
+      : null;
+  const currentPrice = editAlert ? editProjectPrice : selectedProject ? projectPriceInSol(selectedProject) : null;
+  const parsedPrice = parseAmount(targetPrice, PRICE_DECIMALS);
+  const priceProblem =
+    targetPrice.trim() === "" || parsedPrice.ok
+      ? null
+      : parsedPrice.problem === "too_precise"
+        ? `Use at most ${PRICE_DECIMALS} decimal places`
+        : t.launchpad?.alerts?.errors?.invalidPrice || "Please enter a valid price";
+
   const handleSave = async () => {
-    if (!selectedProject || !targetPrice) {
+    if (isSaving) return;
+    if (!projectId || targetPrice.trim() === "") {
       setError(t.launchpad?.alerts?.errors?.selectTokenAndPrice || "Please select a token and enter a target price");
       return;
     }
-
-    const price = parseFloat(targetPrice);
-    if (isNaN(price) || price <= 0) {
-      setError(t.launchpad?.alerts?.errors?.invalidPrice || "Please enter a valid price");
+    if (!parsedPrice.ok) {
+      setError(priceProblem ?? (t.launchpad?.alerts?.errors?.invalidPrice || "Please enter a valid price"));
       return;
     }
 
-    const token = localStorage.getItem("swarp_fd_access_token");
+    const token = getAccessToken();
     if (!token) {
       setError(t.launchpad?.alerts?.errors?.loginToCreate || "Please login to create alerts");
       return;
@@ -121,17 +178,18 @@ export default function CreateAlertModal({
       if (editAlert) {
         await apiService.updateLaunchpadAlert(
           editAlert.id,
-          { condition, targetPrice: price, note: note || undefined },
+          // Always send the note so clearing it in the form clears it on the server.
+          { condition, targetPrice: parsedPrice.value, currency, note: note.trim() },
           token
         );
       } else {
         await apiService.createLaunchpadAlert(
           {
-            projectId: selectedProject.id,
+            projectId,
             condition,
-            targetPrice: price,
-            currency: "USD",
-            note: note || undefined,
+            targetPrice: parsedPrice.value,
+            currency,
+            note: note.trim() || undefined,
           },
           token
         );
@@ -140,15 +198,14 @@ export default function CreateAlertModal({
       onSave?.();
       onClose();
     } catch (err) {
-      console.error("Failed to save alert:", err);
-      setError(t.launchpad?.alerts?.errors?.failedToSave || "Failed to save alert. Please try again.");
+      setError(errorMessage(err, t.launchpad?.alerts?.errors?.failedToSave || "Failed to save alert. Please try again."));
     } finally {
       setIsSaving(false);
     }
   };
 
   // Check if form is valid
-  const isFormValid = selectedProject && targetPrice && parseFloat(targetPrice) > 0;
+  const isFormValid = projectId !== null && parsedPrice.ok;
 
   return (
     <div
@@ -176,8 +233,11 @@ export default function CreateAlertModal({
         >
           {/* Close Button */}
           <button
-            onClick={onClose}
-            className="flex cursor-pointer items-center justify-center w-5 h-5 hover:opacity-70 transition-opacity"
+            type="button"
+            onClick={handleClose}
+            disabled={isSaving}
+            aria-label="Close"
+            className="flex cursor-pointer items-center justify-center w-5 h-5 hover:opacity-70 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path
@@ -226,8 +286,12 @@ export default function CreateAlertModal({
             {/* Token Dropdown */}
             <div className="relative">
               <button
-                onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
-                className="w-full flex items-center justify-between !px-3 !py-3.5"
+                type="button"
+                onClick={() => {
+                  if (!isEditing) setIsProjectDropdownOpen(!isProjectDropdownOpen);
+                }}
+                disabled={isEditing}
+                className="w-full flex items-center justify-between !px-3 !py-3.5 disabled:cursor-default"
                 style={{
                   backgroundColor: "#131519",
                   border: "0.5px solid #2B2D30",
@@ -241,11 +305,12 @@ export default function CreateAlertModal({
                     fontWeight: 400,
                     lineHeight: "1.4em",
                     letterSpacing: "-0.3px",
-                    color: selectedProject ? "#FFFFFF" : "#636466",
+                    color: tokenLabel ? "#FFFFFF" : "#636466",
                   }}
                 >
-                  {selectedProject ? `${selectedProject.name} ${t.launchpad?.alerts?.priceInUSD || "Price in USD"}` : (t.launchpad?.alerts?.selectToken || "Select token")}
+                  {tokenLabel ?? (t.launchpad?.alerts?.selectToken || "Select token")}
                 </span>
+                {!isEditing && (
                 <svg
                   width="18"
                   height="18"
@@ -264,10 +329,11 @@ export default function CreateAlertModal({
                     strokeLinejoin="round"
                   />
                 </svg>
+                )}
               </button>
 
               {/* Dropdown Menu */}
-              {isProjectDropdownOpen && (
+              {!isEditing && isProjectDropdownOpen && (
                 <div
                   className="absolute left-0 right-0 top-full !mt-2 z-50 max-h-48 overflow-y-auto"
                   style={{
@@ -281,6 +347,27 @@ export default function CreateAlertModal({
                   {isLoading ? (
                     <div className="flex items-center justify-center !py-4">
                       <div className="w-5 h-5 border-2 border-[#40E0D0] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : loadError ? (
+                    <div className="flex flex-col items-start !gap-2 !px-3 !py-3">
+                      <span
+                        role="alert"
+                        style={{
+                          fontFamily: "'Inter Variable', Inter, sans-serif",
+                          fontSize: "14px",
+                          fontWeight: 400,
+                          color: "#EB5757",
+                        }}
+                      >
+                        {loadError}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleRetryLoad}
+                        className="cursor-pointer !px-3 !py-1 bg-[#2B2D30] rounded-full text-sm text-white hover:bg-[#3B3D40]"
+                      >
+                        {t.launchpad?.watchlist?.tryAgain || "Try again"}
+                      </button>
                     </div>
                   ) : projects.length === 0 ? (
                     <div className="!px-3 !py-3">
@@ -298,6 +385,7 @@ export default function CreateAlertModal({
                   ) : (
                     projects.map((project) => (
                       <button
+                        type="button"
                         key={project.id}
                         onClick={() => {
                           setSelectedProject(project);
@@ -338,6 +426,7 @@ export default function CreateAlertModal({
               {/* Condition Dropdown */}
               <div className="relative" style={{ width: "145px" }}>
                 <button
+                  type="button"
                   onClick={() => setIsConditionDropdownOpen(!isConditionDropdownOpen)}
                   className="w-full flex items-center justify-between !px-3 !py-3.5"
                   style={{
@@ -389,6 +478,7 @@ export default function CreateAlertModal({
                     }}
                   >
                     <button
+                      type="button"
                       onClick={() => {
                         setCondition("goes_over");
                         setIsConditionDropdownOpen(false);
@@ -410,6 +500,7 @@ export default function CreateAlertModal({
                       </span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         setCondition("goes_under");
                         setIsConditionDropdownOpen(false);
@@ -443,25 +534,30 @@ export default function CreateAlertModal({
                   borderRadius: "12px",
                 }}
               >
-                <span
-                  style={{
-                    fontFamily: "'Inter Variable', Inter, sans-serif",
-                    fontSize: "14px",
-                    fontWeight: 400,
-                    lineHeight: "1.4em",
-                    letterSpacing: "-0.3px",
-                    color: "#FFFFFF",
-                  }}
-                >
-                  $
-                </span>
+                {currency === "USD" && (
+                  <span
+                    style={{
+                      fontFamily: "'Inter Variable', Inter, sans-serif",
+                      fontSize: "14px",
+                      fontWeight: 400,
+                      lineHeight: "1.4em",
+                      letterSpacing: "-0.3px",
+                      color: "#FFFFFF",
+                    }}
+                  >
+                    $
+                  </span>
+                )}
                 <input
-                  type="number"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  aria-label="Target price"
+                  aria-invalid={priceProblem !== null}
                   placeholder="0.00"
                   value={targetPrice}
-                  onChange={(e) => setTargetPrice(e.target.value)}
-                  className="flex-1 bg-transparent outline-none"
+                  onChange={handlePriceChange}
+                  className="flex-1 min-w-0 bg-transparent outline-none"
                   style={{
                     fontFamily: "'Inter Variable', Inter, sans-serif",
                     fontSize: "14px",
@@ -471,8 +567,60 @@ export default function CreateAlertModal({
                     color: "#FFFFFF",
                   }}
                 />
+                {/* Currency the target price is quoted in */}
+                <div
+                  role="group"
+                  aria-label="Price currency"
+                  className="flex shrink-0 rounded-full overflow-hidden"
+                  style={{ border: "0.5px solid #2B2D30" }}
+                >
+                  {(["SOL", "USD"] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={currency === option}
+                      onClick={() => setCurrency(option)}
+                      className="cursor-pointer !px-2 !py-0.5 transition-colors"
+                      style={{
+                        fontFamily: "'Inter Variable', Inter, sans-serif",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        lineHeight: "1.5em",
+                        backgroundColor: currency === option ? "#40E0D0" : "transparent",
+                        color: currency === option ? "#090A11" : "#636466",
+                      }}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
+
+            {/* Price hint: validation problem, or the token's current price for reference */}
+            {(priceProblem || projectId) && (
+              <span
+                role={priceProblem ? "alert" : undefined}
+                style={{
+                  fontFamily: "'Inter Variable', Inter, sans-serif",
+                  fontSize: "12px",
+                  fontWeight: 400,
+                  lineHeight: "1.5em",
+                  letterSpacing: "-0.3px",
+                  color: priceProblem ? "#EB5757" : "#636466",
+                  marginTop: "-8px",
+                }}
+              >
+                {priceProblem
+                  ?? (currentPrice !== null
+                    ? `Current price: ${formatSolPrice(currentPrice)}${currency === "USD" ? " (USD price not available)" : ""}`
+                    : isEditing && isLoading
+                      ? "Loading current price…"
+                      : isEditing && loadError
+                        ? loadError
+                        : "Current price unavailable")}
+              </span>
+            )}
 
             {/* Note Input */}
             <div

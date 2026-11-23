@@ -44,28 +44,9 @@ const [message, setMessage] = useState("");
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
 
-//   async function validateReferralCode(codeValue: string) {
-//   if (!codeValue.trim()) {
-//     setValid(null);
-//     setMessage("");
-//     return;
-//   }
 
-//   setChecking(true);
-//   setValid(null);
-//   setMessage("");
 
-//   try {
-//     const res = await apiService.checkReferralCode(codeValue.trim());
-//     setValid(res.valid);
-//     setMessage(res.message);
-//   } catch (err: any) {
-//     setValid(false);
-//     setMessage("Something went wrong");
-//   }
 
-//   setChecking(false);
-// }
 
 async function handleSubmit(e?: React.FormEvent) {
   e?.preventDefault();
@@ -83,7 +64,7 @@ async function handleSubmit(e?: React.FormEvent) {
     setMessage(res.message);
 
     if (res.valid) {
-      localStorage.setItem("swarp_fd_referral_code", trimmed);
+      localStorage.setItem("swarp_fd_inviter_referral_code", trimmed);
 
       // show success state on button
       setChecking(false);

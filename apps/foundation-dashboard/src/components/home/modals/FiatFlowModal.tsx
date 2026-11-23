@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { errorMessage } from '@/lib/http';
+import { isAmountInput, parseAmount } from '@/lib/amount';
 import { apiService } from '@/services/api';
 
 interface FiatFlowModalProps {
@@ -9,6 +11,8 @@ interface FiatFlowModalProps {
   walletId: string;
   walletAddress: string;
   authToken: string;
+  /** Tab shown when the modal opens. */
+  initialTab?: 'deposit' | 'withdraw';
 }
 
 type TabType = 'deposit' | 'withdraw';
@@ -30,8 +34,9 @@ export const FiatFlowModal: React.FC<FiatFlowModalProps> = ({
   walletId,
   walletAddress,
   authToken,
+  initialTab = 'deposit',
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('deposit');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [fiatCurrency, setFiatCurrency] = useState('EUR');
   const [cryptoCurrency, setCryptoCurrency] = useState('SOL');
   const [amount, setAmount] = useState('');
@@ -40,16 +45,25 @@ export const FiatFlowModal: React.FC<FiatFlowModalProps> = ({
   const [success, setSuccess] = useState(false);
   const [showFiatDropdown, setShowFiatDropdown] = useState(false);
 
+  useEffect(() => {
+    if (isOpen) setActiveTab(initialTab);
+  }, [isOpen, initialTab]);
+
   if (!isOpen) return null;
 
   const selectedFiat = FIAT_CURRENCIES.find((c) => c.code === fiatCurrency) || FIAT_CURRENCIES[0];
 
+  const parsedFiat = parseAmount(amount, 2);
+
   const handleContinue = async () => {
-    if (!amount || parseFloat(amount) <= 0) {
-      setError('Please enter a valid amount');
+    if (!parsedFiat.ok) {
+      setError(parsedFiat.message);
       return;
     }
 
+    // Open the window inside the click handler so popup blockers allow it,
+    // then point it at the signed URL once the backend returns it.
+    const popup = window.open('', '_blank');
     setIsLoading(true);
     setError(null);
 
@@ -59,13 +73,20 @@ export const FiatFlowModal: React.FC<FiatFlowModalProps> = ({
         walletAddress,
         fiatCurrency,
         cryptoCurrency,
-        fiatAmount: parseFloat(amount),
+        fiatAmount: parsedFiat.value,
       });
+      if (!/^https:\/\//.test(result.url)) throw new Error('Received an invalid payment link.');
 
-      window.open(result.url, '_blank');
+      if (popup && !popup.closed) {
+        popup.opener = null;
+        popup.location.href = result.url;
+      } else {
+        window.location.assign(result.url);
+      }
       setSuccess(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to initiate transfer. Please try again.');
+      popup?.close();
+      setError(errorMessage(err, 'Failed to initiate transfer. Please try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -79,14 +100,6 @@ export const FiatFlowModal: React.FC<FiatFlowModalProps> = ({
     setShowFiatDropdown(false);
     onClose();
   };
-
-  // Rough estimate display (illustrative only)
-  const estimatedCrypto = amount && parseFloat(amount) > 0
-    ? (cryptoCurrency === 'USDC'
-      ? parseFloat(amount) * 0.98
-      : parseFloat(amount) * 0.0067
-    ).toFixed(cryptoCurrency === 'USDC' ? 2 : 4)
-    : '0';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 !p-4" onClick={handleClose}>
@@ -197,20 +210,20 @@ export const FiatFlowModal: React.FC<FiatFlowModalProps> = ({
             {/* Amount input */}
             <div className="!mb-4">
               <label className="text-[#636466] text-xs !mb-1.5 block">
-                {activeTab === 'deposit' ? 'Amount' : 'Crypto amount'}
+                {activeTab === 'deposit' ? 'Amount you pay' : 'Amount you want to receive'}
               </label>
               <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#636466] text-sm">
-                  {activeTab === 'deposit' ? selectedFiat.symbol : ''}
+                  {selectedFiat.symbol}
                 </span>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   value={amount}
-                  onChange={(e) => { setAmount(e.target.value); setError(null); }}
+                  onChange={(e) => { if (isAmountInput(e.target.value)) { setAmount(e.target.value); setError(null); } }}
                   placeholder="0.00"
-                  className={`w-full bg-[#090A11] border border-[#2B2D30] rounded-xl !py-3 text-white text-sm focus:outline-none focus:border-[#40E0D0] transition-colors ${
-                    activeTab === 'deposit' ? '!pl-8 !pr-4' : '!px-4'
-                  }`}
+                  className="w-full bg-[#090A11] border border-[#2B2D30] rounded-xl !py-3 !pl-8 !pr-4 text-white text-sm focus:outline-none focus:border-[#40E0D0] transition-colors"
                 />
               </div>
             </div>
@@ -237,20 +250,9 @@ export const FiatFlowModal: React.FC<FiatFlowModalProps> = ({
               </div>
             </div>
 
-            {/* Estimated amount */}
-            <div className="bg-[#090A11] border border-[#2B2D30] rounded-xl !px-4 !py-3 !mb-5">
-              <div className="flex justify-between items-center">
-                <span className="text-[#636466] text-xs">
-                  {activeTab === 'deposit' ? 'Estimated receive' : 'Estimated payout'}
-                </span>
-                <span className="text-white text-sm font-medium">
-                  {activeTab === 'deposit'
-                    ? `~${estimatedCrypto} ${cryptoCurrency}`
-                    : `~${selectedFiat.symbol}${estimatedCrypto}`
-                  }
-                </span>
-              </div>
-            </div>
+            <p className="text-[#636466] text-xs !mb-5">
+              The exact exchange rate and fees are shown by Transak before you confirm.
+            </p>
 
             {/* Error */}
             {error && (
@@ -262,7 +264,7 @@ export const FiatFlowModal: React.FC<FiatFlowModalProps> = ({
             {/* Continue button */}
             <button
               onClick={handleContinue}
-              disabled={isLoading || !amount || parseFloat(amount) <= 0}
+              disabled={isLoading || !parsedFiat.ok}
               className="bg-[#40E0D0] text-black font-semibold !py-3 rounded-xl w-full hover:bg-[#40E0D0]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (

@@ -6,6 +6,7 @@ import { RootState } from '@/store';
 import { setLanguage } from '@/store/slices/settingsSlice';
 import { displayNameToLocale } from '@/i18n';
 import { apiService } from '@/services/api';
+import { getAccessToken } from '@/lib/session';
 
 interface LanguageSelectorProps {
   className?: string;
@@ -44,7 +45,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ className = 
     setIsOpen(false);
 
     // Update backend preference if logged in
-    const token = localStorage.getItem('swarp_fd_access_token');
+    const token = getAccessToken();
     if (token) {
       try {
         await apiService.updateLanguage(token, lang.code);

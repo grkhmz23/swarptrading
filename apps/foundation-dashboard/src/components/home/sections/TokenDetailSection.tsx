@@ -4,28 +4,16 @@ import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import type { TranslationKeys } from '@/i18n';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { SWARP_PRESALE_PRICE_USD, SWARP_TOKEN_MINT } from '@/config/env';
+import { fetchTokenDetail, type TokenData } from '@/services/tokenDetail';
 
-interface TokenData {
-  address: string;
-  symbol: string;
-  name: string;
-  logoURI?: string;
-  price: number;
-  priceChange24h: number;
-  volume24h: number;
-  marketCap: number;
-  liquidity: number;
-  fdv: number;
-  holderCount: number;
-  isVerified?: boolean;
-}
 
 interface TokenDetailSectionProps {
   t: TranslationKeys;
   tokenAddress: string;
   onBack: () => void;
-  setShowSwapModal: (show: boolean) => void;
+  /** Open the swap flow with this token preselected as the output. */
+  onBuy: (mint: string) => void;
 }
 
 export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
@@ -33,7 +21,7 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
   t,
   tokenAddress,
   onBack,
-  setShowSwapModal,
+  onBuy,
 }) => {
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,26 +29,25 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
   const [failedImage, setFailedImage] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // SWARP token mint address
-  const SWARP_MINT = process.env.NEXT_PUBLIC_SWARP_TOKEN_MINT || 'SWRP2DA2zGT9q6MvSGanDiTMoiJqqcgmDnbkPJekp3e';
-  const isSWARP = tokenAddress === SWARP_MINT;
+  const isSWARP = tokenAddress === SWARP_TOKEN_MINT;
 
   useEffect(() => {
-    const fetchTokenData = async () => {
-      if (!tokenAddress) return;
+    if (!tokenAddress) return;
+    const controller = new AbortController();
 
+    const load = async () => {
       setLoading(true);
       setError(null);
       setFailedImage(false);
 
-      // For SWARP token, use local data since it's not on DexScreener
+      // SWARP is in private sale and not listed on any DEX: there is no market price.
       if (isSWARP) {
         setTokenData({
-          address: SWARP_MINT,
+          address: SWARP_TOKEN_MINT,
           symbol: 'SWARP',
           name: 'Swarp Token',
           logoURI: 'https://swarpfoundation.com/swarp-logo.png',
-          price: 0.03,
+          price: null,
           priceChange24h: 0,
           volume24h: 0,
           marketCap: 0,
@@ -73,50 +60,25 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
       }
 
       try {
-        // Fetch token data from backend API (which fetches from DexScreener)
-        const response = await fetch(`${API_BASE_URL}/tokens/detail/${tokenAddress}`);
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('Token not found');
-            return;
-          }
-          throw new Error('Failed to fetch token data');
-        }
-
-        const data = await response.json();
-
-        if (data.token) {
-          setTokenData({
-            address: data.token.address,
-            symbol: data.token.symbol,
-            name: data.token.name,
-            logoURI: data.token.logoURI,
-            price: data.token.price,
-            priceChange24h: data.token.priceChange24h,
-            volume24h: data.token.volume24h,
-            marketCap: data.token.marketCap,
-            liquidity: data.token.liquidity,
-            fdv: data.token.fdv,
-            holderCount: data.token.holderCount || 0,
-            isVerified: data.token.isVerified,
-          });
-        } else {
-          setError('Token not found');
-        }
+        const data = await fetchTokenDetail(tokenAddress, controller.signal);
+        if (controller.signal.aborted) return;
+        setTokenData(data);
+        if (!data) setError('Token not found');
       } catch (err) {
-        console.error('Error fetching token data:', err);
-        setError('Failed to load token data');
+        if (controller.signal.aborted) return;
+        setTokenData(null);
+        setError(err instanceof Error && err.message ? err.message : 'Failed to load token data');
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
-    fetchTokenData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokenAddress]);
+    load();
+    return () => controller.abort();
+  }, [tokenAddress, isSWARP]);
 
-  const formatPrice = (p: number) => {
+  const formatPrice = (p: number | null) => {
+    if (p === null) return 'Price unavailable';
     if (!p) return '$0.00';
     if (p >= 1000) return `$${p.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     if (p >= 1) return `$${p.toFixed(2)}`;
@@ -138,8 +100,8 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+    } catch {
+      // Clipboard access can be denied by the browser; nothing to recover.
     }
   };
 
@@ -328,10 +290,12 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-[#090A11] border border-[#2B2D30] rounded-xl !p-3">
-                    <p className="text-[#636466] text-xs !mb-1">Presale Price</p>
-                    <p className="text-white font-semibold">$0.03</p>
-                  </div>
+                  {SWARP_PRESALE_PRICE_USD !== null && (
+                    <div className="bg-[#090A11] border border-[#2B2D30] rounded-xl !p-3">
+                      <p className="text-[#636466] text-xs !mb-1">Presale Price</p>
+                      <p className="text-white font-semibold">${SWARP_PRESALE_PRICE_USD}</p>
+                    </div>
+                  )}
                   <div className="bg-[#090A11] border border-[#2B2D30] rounded-xl !p-3">
                     <p className="text-[#636466] text-xs !mb-1">Network</p>
                     <p className="text-white font-semibold">Solana</p>
@@ -354,10 +318,12 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
                 <iframe
                   id="dexscreener-embed"
                   title="DexScreener Chart"
-                  src={`https://dexscreener.com/solana/${tokenAddress}?embed=1&loadChartSettings=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=15`}
+                  src={`https://dexscreener.com/solana/${encodeURIComponent(tokenAddress)}?embed=1&loadChartSettings=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=15`}
                   className="w-full"
                   style={{ height: '450px', border: 'none' }}
                   allow="clipboard-write"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                  referrerPolicy="no-referrer"
                 />
               </div>
 
@@ -394,13 +360,13 @@ export const TokenDetailSection: React.FC<TokenDetailSectionProps> = ({
               {/* Action Buttons */}
               <div className="flex gap-4 !mb-6">
                 <button
-                  onClick={() => setShowSwapModal(true)}
+                  onClick={() => onBuy(tokenAddress)}
                   className="flex-1 bg-[#40E0D0] text-[#090A11] !py-4 rounded-xl font-bold text-lg hover:bg-[#40E0D0]/90 transition-colors"
                 >
                   Buy {tokenData.symbol}
                 </button>
                 <button
-                  onClick={() => window.open(`https://dexscreener.com/solana/${tokenAddress}`, '_blank')}
+                  onClick={() => window.open(`https://dexscreener.com/solana/${encodeURIComponent(tokenAddress)}`, '_blank', 'noopener,noreferrer')}
                   className="!px-6 !py-4 bg-[#2B2D30] text-white rounded-xl font-semibold hover:bg-[#363739] transition-colors flex items-center gap-2"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none">

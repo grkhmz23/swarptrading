@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from 'next/navigation';
 
+/** Legacy route: the wallet lives at /dashboard. */
 export default function HomeRedirectPage() {
   const router = useRouter();
 
@@ -10,9 +11,5 @@ export default function HomeRedirectPage() {
     router.replace('/dashboard');
   }, [router]);
 
-  return (
-    <div className="flex items-center justify-center h-screen bg-[#090A11]">
-      <p className="text-white">Redirecting to dashboard...</p>
-    </div>
-  );
+  return null;
 }

@@ -1,192 +1,211 @@
-import React, { useState } from "react";
-import type {
-  BaseRecord,
-  CrudFilters,
-} from "@refinedev/core";
-import { useTable } from "@refinedev/react-table";
-import { flexRender, type ColumnDef } from "@tanstack/react-table";
+import React from "react";
+import { useCan, useTable, type BaseRecord, type CrudFilter } from "@refinedev/core";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+  type Updater,
+} from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { EyeIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+  EyeIcon,
+  PencilIcon,
+  TrashIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
+  ChevronUpDownIcon,
+} from "@heroicons/react/24/outline";
 import { useNavigate } from "react-router-dom";
 import { LoadingTable } from "@/components/ui/loading";
 import { GenericDelete } from "./GenericDelete";
 import { SearchInput } from "@/components/SearchInput";
+import { FieldValue } from "./FieldValue";
+import type { FieldDef } from "@/resources/fields";
+import { isSensitiveKey } from "@/lib/format";
 
 interface GenericListProps {
   resource: string;
   title: string;
+  /** Singular name used in buttons and dialogs, e.g. "User". */
+  singularTitle: string;
   description: string;
   basePath: string;
-  columns: string[];
-  canDelete?: boolean; // Add option to enable/disable delete
-  canEdit?: boolean; // Add option to enable/disable edit
-  searchPlaceholder?: string; // Custom placeholder for search input
-  enableSearch?: boolean; // Enable/disable search functionality
+  columns: FieldDef[];
+  searchPlaceholder?: string;
+  enableSearch?: boolean;
+  /** Record field whose value must be typed to confirm deletion (defaults to the id). */
+  deleteConfirmField?: string;
 }
+
+const SEARCH_FIELD = "search";
+const PAGE_SIZES = [10, 20, 30, 40, 50];
+
+const isSearchFilter = (filter: CrudFilter): boolean => "field" in filter && filter.field === SEARCH_FIELD;
 
 export const GenericList: React.FC<GenericListProps> = ({
   resource,
   title,
+  singularTitle,
   description,
   basePath,
   columns: fieldColumns,
-  canDelete = true, // Default to true
-  canEdit = true, // Default to true
   searchPlaceholder = "Search...",
-  enableSearch = true, // Default to true
+  enableSearch = true,
+  deleteConfirmField,
 }) => {
   const navigate = useNavigate();
-  const [searchTerm, setSearchTerm] = useState("");
+
+  const { data: canEdit } = useCan({ resource, action: "edit" });
+  const { data: canDelete } = useCan({ resource, action: "delete" });
+  const allowEdit = canEdit?.can === true;
+  const allowDelete = canDelete?.can === true;
+
+  // Page, page size, sorting and search are all synced to the URL by Refine,
+  // so deep links and back/forward restore the same view.
+  const {
+    tableQuery: { isLoading, isError, error, refetch },
+    result,
+    currentPage,
+    setCurrentPage,
+    pageCount,
+    pageSize,
+    setPageSize,
+    sorters,
+    setSorters,
+    filters,
+    setFilters,
+  } = useTable({
+    resource,
+    pagination: { currentPage: 1, pageSize: 10 },
+    sorters: { mode: "server" },
+    filters: { mode: "server" },
+    syncWithLocation: true,
+  });
+
+  const searchFilter = filters.find(isSearchFilter);
+  const searchTerm = typeof searchFilter?.value === "string" ? searchFilter.value : "";
+
+  const handleSearch = React.useCallback(
+    (term: string) => {
+      const others = filters.filter((filter) => !isSearchFilter(filter));
+      const next = term.trim()
+        ? [...others, { field: SEARCH_FIELD, operator: "contains" as const, value: term }]
+        : others;
+      setFilters(next, "replace");
+      setCurrentPage(1);
+    },
+    [filters, setFilters, setCurrentPage],
+  );
+
+  const sorting: SortingState = React.useMemo(
+    () => sorters.map((sorter) => ({ id: sorter.field, desc: sorter.order === "desc" })),
+    [sorters],
+  );
+
+  const handleSortingChange = React.useCallback(
+    (updater: Updater<SortingState>) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      setSorters(next.map((sort) => ({ field: sort.id, order: sort.desc ? "desc" : "asc" })));
+      setCurrentPage(1);
+    },
+    [sorting, setSorters, setCurrentPage],
+  );
+
+  const visibleColumns = React.useMemo(
+    () => fieldColumns.filter((field) => !isSensitiveKey(field.key)),
+    [fieldColumns],
+  );
 
   const columns = React.useMemo<ColumnDef<BaseRecord>[]>(
     () => [
-      ...fieldColumns.map(field => ({
-        id: field,
-        accessorKey: field,
-        header: field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1'),
-        cell: ({ getValue, row }: { getValue: () => unknown; row: { original: Record<string, unknown> } }) => {
-          const value = getValue();
-
-          // Handle approval status - show as Approved/Not Approved text with badge
-          if (field === 'approvalStatus') {
-            // Use approvalStatus if available, otherwise fallback to isVerified
-            let isApproved = false;
-            if (value) {
-              isApproved = value === 'approved';
-            } else if (row.original.isVerified !== undefined) {
-              // Fallback to isVerified if no approvalStatus
-              isApproved = row.original.isVerified === true;
-            }
-
-            return (
-              <Badge variant={isApproved ? 'default' : 'destructive'} className="whitespace-nowrap">
-                {isApproved ? "Approved" : "Not Approved"}
-              </Badge>
-            );
-          }
-
-          if (field === 'isVerified') {
-            return <span className="text-muted-foreground">N/A</span>;
-          }
-
-          if (typeof value === 'boolean') {
-            return <Badge variant={value ? 'default' : 'destructive'}>{value ? "Yes" : "No"}</Badge>;
-          }
-
-          if (field.includes('status')) {
-            return <Badge variant="secondary">{(value as string) || 'Unknown'}</Badge>;
-          }
-
-          if (field.includes('date') || field.includes('At')) {
-            return value ? new Date(value as string | number).toLocaleDateString() : 'N/A';
-          }
-
-          return (value as string | number) || 'N/A';
-        },
-      })),
+      ...visibleColumns.map(
+        (field): ColumnDef<BaseRecord> => ({
+          id: field.key,
+          accessorFn: (row) => row[field.key],
+          header: field.label,
+          enableSorting: field.sortable === true,
+          cell: ({ getValue }) => <FieldValue value={getValue()} kind={field.kind} maskPii compact />,
+        }),
+      ),
       {
         id: "actions",
         header: "Actions",
-        cell: ({ row }) => (
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(`${basePath}/show/${row.original.id}`)}
-              title="View details"
-            >
-              <EyeIcon className="h-4 w-4" />
-            </Button>
-            {canEdit && (
+        enableSorting: false,
+        cell: ({ row }) => {
+          const recordId = String(row.original.id);
+          const encodedId = encodeURIComponent(recordId);
+          const confirmSource = deleteConfirmField ? row.original[deleteConfirmField] : undefined;
+          return (
+            <div className="flex gap-2">
               <Button
-                variant="outline" 
+                variant="outline"
                 size="sm"
-                onClick={() => navigate(`${basePath}/edit/${row.original.id}`)}
-                title="Edit"
+                onClick={() => navigate(`${basePath}/show/${encodedId}`)}
+                title="View details"
+                aria-label={`View ${singularTitle.toLowerCase()} ${recordId}`}
               >
-                <PencilIcon className="h-4 w-4" />
+                <EyeIcon className="h-4 w-4" />
               </Button>
-            )}
-            {canDelete && (
-              <GenericDelete
-                id={String(row.original.id)}
-                resource={resource}
-                title={title.slice(0, -1)} // Remove 's' from plural
-                redirectTo={basePath}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    title="Delete"
-                  >
-                    <TrashIcon className="h-4 w-4" />
-                  </Button>
-                }
-              />
-            )}
-          </div>
-        ),
+              {allowEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`${basePath}/edit/${encodedId}`)}
+                  title="Edit"
+                  aria-label={`Edit ${singularTitle.toLowerCase()} ${recordId}`}
+                >
+                  <PencilIcon className="h-4 w-4" />
+                </Button>
+              )}
+              {allowDelete && (
+                <GenericDelete
+                  id={recordId}
+                  resource={resource}
+                  title={singularTitle}
+                  confirmValue={String(confirmSource ?? recordId)}
+                  onDeleteSuccess={() => undefined}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      title="Delete"
+                      aria-label={`Delete ${singularTitle.toLowerCase()} ${recordId}`}
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+              )}
+            </div>
+          );
+        },
       },
     ],
-    [navigate, basePath, fieldColumns, canDelete, canEdit, resource, title]
+    [visibleColumns, navigate, basePath, allowEdit, allowDelete, resource, singularTitle, deleteConfirmField],
   );
 
-  const filters: CrudFilters = React.useMemo(() => {
-    const filterArray: CrudFilters = [];
-    if (searchTerm) {
-      filterArray.push({
-        field: 'search',
-        operator: 'contains',
-        value: searchTerm,
-      });
-    }
-    return filterArray;
-  }, [searchTerm]);
-
-  const {
-    reactTable: {
-      getHeaderGroups,
-      getRowModel,
-    },
-    refineCore: {
-      tableQuery: { data: tableData, isLoading },
-      currentPage,
-      setCurrentPage,
-      pageCount,
-      pageSize,
-      setPageSize,
-    },
-  } = useTable({
+  const table = useReactTable({
+    data: result.data,
     columns,
-    refineCoreProps: {
-      resource,
-      pagination: {
-        currentPage: 1,
-        pageSize: 10,
-      },
-      filters: {
-        permanent: filters,
-      },
-    },
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true,
+    manualSorting: true,
+    manualFiltering: true,
+    enableMultiSort: false,
+    pageCount,
+    state: { sorting },
+    onSortingChange: handleSortingChange,
   });
 
-  // Reset to page 1 when search changes
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, setCurrentPage]);
-
-  const totalResults = tableData?.total || 0;
+  const totalResults = result.total ?? 0;
+  const lastPage = Math.max(pageCount, 1);
 
   return (
     <div className="space-y-4">
@@ -199,18 +218,17 @@ export const GenericList: React.FC<GenericListProps> = ({
             </div>
             {enableSearch && (
               <SearchInput
-                onSearch={setSearchTerm}
+                value={searchTerm}
+                onSearch={handleSearch}
                 placeholder={searchPlaceholder}
                 className="max-w-md"
               />
             )}
             {searchTerm && (
               <div className="text-sm text-muted-foreground">
-                Showing results for: <strong>"{searchTerm}"</strong> ({totalResults} {totalResults === 1 ? 'result' : 'results'} found)
-                <button
-                  onClick={() => setSearchTerm('')}
-                  className="ml-2 text-primary hover:underline"
-                >
+                Showing results for: <strong>"{searchTerm}"</strong> ({totalResults}{" "}
+                {totalResults === 1 ? "result" : "results"} found)
+                <button type="button" onClick={() => handleSearch("")} className="ml-2 text-primary hover:underline">
                   Clear search
                 </button>
               </div>
@@ -219,49 +237,68 @@ export const GenericList: React.FC<GenericListProps> = ({
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <LoadingTable rows={8} columns={fieldColumns.length + 1} />
+            <LoadingTable rows={8} columns={visibleColumns.length + 1} />
+          ) : isError ? (
+            <div className="flex flex-col items-center gap-3 rounded-md border p-8 text-center">
+              <p className="font-medium">Unable to load {title.toLowerCase()}.</p>
+              <p className="text-sm text-muted-foreground">{error?.message}</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Try again
+              </Button>
+            </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
-                  {getHeaderGroups().map((headerGroup) => (
+                  {table.getHeaderGroups().map((headerGroup) => (
                     <TableRow key={headerGroup.id}>
-                      {headerGroup.headers.map((header) => (
-                        <TableHead key={header.id}>
-                          {header.isPlaceholder
-                            ? null
-                            : flexRender(
-                                header.column.columnDef.header,
-                                header.getContext()
-                              )}
-                        </TableHead>
-                      ))}
+                      {headerGroup.headers.map((header) => {
+                        const sortable = header.column.getCanSort();
+                        const direction = header.column.getIsSorted();
+                        const label = flexRender(header.column.columnDef.header, header.getContext());
+                        return (
+                          <TableHead
+                            key={header.id}
+                            aria-sort={
+                              direction === "asc" ? "ascending" : direction === "desc" ? "descending" : undefined
+                            }
+                          >
+                            {sortable ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1 hover:text-foreground"
+                                onClick={header.column.getToggleSortingHandler()}
+                              >
+                                {label}
+                                {direction === "asc" ? (
+                                  <ChevronUpIcon className="h-3 w-3" />
+                                ) : direction === "desc" ? (
+                                  <ChevronDownIcon className="h-3 w-3" />
+                                ) : (
+                                  <ChevronUpDownIcon className="h-3 w-3 opacity-50" />
+                                )}
+                              </button>
+                            ) : (
+                              label
+                            )}
+                          </TableHead>
+                        );
+                      })}
                     </TableRow>
                   ))}
                 </TableHeader>
                 <TableBody>
-                  {getRowModel().rows?.length ? (
-                    getRowModel().rows.map((row) => (
-                      <TableRow
-                        key={row.id}
-                        data-state={row.getIsSelected() && "selected"}
-                      >
+                  {table.getRowModel().rows.length ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow key={row.id}>
                         {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id}>
-                            {flexRender(
-                              cell.column.columnDef.cell,
-                              cell.getContext()
-                            )}
-                          </TableCell>
+                          <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                         ))}
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell
-                        colSpan={columns.length}
-                        className="h-24 text-center"
-                      >
+                      <TableCell colSpan={columns.length} className="h-24 text-center">
                         {searchTerm ? (
                           <div className="flex flex-col items-center gap-2">
                             <p>No results found for "{searchTerm}"</p>
@@ -279,41 +316,47 @@ export const GenericList: React.FC<GenericListProps> = ({
               </Table>
             </div>
           )}
-          {!isLoading && (
-            <div className="flex items-center justify-between space-x-6 lg:space-x-8 pt-4">
+          {!isLoading && !isError && (
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-4">
               <div className="flex items-center space-x-2">
-                <p className="text-sm font-medium">Rows per page</p>
+                <label htmlFor={`${resource}-page-size`} className="text-sm font-medium">
+                  Rows per page
+                </label>
                 <select
+                  id={`${resource}-page-size`}
                   value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="h-8 w-[70px] rounded border border-input bg-background px-3 py-2 text-sm"
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="h-8 w-[70px] rounded border border-input bg-background px-2 text-sm"
                 >
-                  {[10, 20, 30, 40, 50].map((pageSize) => (
-                    <option key={pageSize} value={pageSize}>
-                      {pageSize}
+                  {PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
                     </option>
                   ))}
                 </select>
               </div>
-              <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-                Page {currentPage} of {pageCount || 1}
+              <div className="text-sm font-medium">
+                Page {currentPage} of {lastPage}
               </div>
               <div className="flex items-center space-x-2">
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
                   onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
+                  disabled={currentPage <= 1}
                 >
                   <span className="sr-only">Go to first page</span>
                   <ChevronLeftIcon className="h-4 w-4" />
-                  <ChevronLeftIcon className="h-4 w-4 -ml-2" />
+                  <ChevronLeftIcon className="-ml-2 h-4 w-4" />
                 </Button>
                 <Button
                   variant="outline"
                   className="h-8 w-8 p-0"
                   onClick={() => setCurrentPage(currentPage - 1)}
-                  disabled={currentPage === 1}
+                  disabled={currentPage <= 1}
                 >
                   <span className="sr-only">Go to previous page</span>
                   <ChevronLeftIcon className="h-4 w-4" />
@@ -322,7 +365,7 @@ export const GenericList: React.FC<GenericListProps> = ({
                   variant="outline"
                   className="h-8 w-8 p-0"
                   onClick={() => setCurrentPage(currentPage + 1)}
-                  disabled={currentPage === pageCount}
+                  disabled={currentPage >= lastPage}
                 >
                   <span className="sr-only">Go to next page</span>
                   <ChevronRightIcon className="h-4 w-4" />
@@ -330,12 +373,12 @@ export const GenericList: React.FC<GenericListProps> = ({
                 <Button
                   variant="outline"
                   className="hidden h-8 w-8 p-0 lg:flex"
-                  onClick={() => setCurrentPage(pageCount || 1)}
-                  disabled={currentPage === pageCount}
+                  onClick={() => setCurrentPage(lastPage)}
+                  disabled={currentPage >= lastPage}
                 >
                   <span className="sr-only">Go to last page</span>
                   <ChevronRightIcon className="h-4 w-4" />
-                  <ChevronRightIcon className="h-4 w-4 -ml-2" />
+                  <ChevronRightIcon className="-ml-2 h-4 w-4" />
                 </Button>
               </div>
             </div>

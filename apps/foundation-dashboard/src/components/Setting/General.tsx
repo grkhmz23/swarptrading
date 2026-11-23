@@ -8,6 +8,7 @@ import { setCurrency, setLanguage, setNetwork } from "@/store/slices/settingsSli
 import { useT } from "@/i18n/I18nProvider";
 import { apiService } from "@/services/api";
 import { displayNameToLocale } from "@/i18n";
+import { getAccessToken } from '@/lib/session';
 
 export default function General() {
   const dispatch = useDispatch();
@@ -27,7 +28,7 @@ export default function General() {
     dispatch(setLanguage(lang as "English" | "Italian"));
 
     // Also update the backend so notifications use the correct language
-    const token = localStorage.getItem('swarp_fd_access_token');
+    const token = getAccessToken();
     if (token) {
       try {
         const localeCode = displayNameToLocale[lang] || 'en';

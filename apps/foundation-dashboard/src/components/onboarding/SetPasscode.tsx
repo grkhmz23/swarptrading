@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import Image from 'next/image';
 import { AnimatedGradientBackground } from '../ui/AnimatedGradientBackground';
 import { useT } from '@/i18n/I18nProvider';
 import { LanguageSelector } from '../ui/LanguageSelector';
+import { CodeInput, emptyCode, type CodeInputHandle } from '../ui/CodeInput';
+import { checkNewPin, pinProblemMessage } from '@/lib/pin';
+import { LegalNotice } from '../ui/LegalNotice';
 
 interface SetPasscodeProps {
   onBack?: () => void;
@@ -15,42 +18,20 @@ export const SetPasscode: React.FC<SetPasscodeProps> = ({
   onComplete
 }) => {
   const t = useT();
-  const [passcode, setPasscode] = useState(['', '', '', '', '', '']);
+  const [passcode, setPasscode] = useState<string[]>(emptyCode());
+  const [error, setError] = useState('');
+  const codeInputRef = useRef<CodeInputHandle>(null);
 
-  const handleCodeChange = (index: number, value: string) => {
-    if (value.length > 1) return;
-    
-    // Only allow digits
-    if (value && !/^\d$/.test(value)) return;
-    
-    const newCode = [...passcode];
-    newCode[index] = value;
-    setPasscode(newCode);
-
-    // Auto-focus next input
-    if (value && index < 5) {
-      const nextInput = document.querySelector(`input[data-index="${index + 1}"]`) as HTMLInputElement;
-      if (nextInput) nextInput.focus();
+  const handleComplete = (pin: string) => {
+    const problem = checkNewPin(pin);
+    if (problem) {
+      setError(pinProblemMessage(problem));
+      setPasscode(emptyCode());
+      codeInputRef.current?.focus();
+      return;
     }
-
-    // Auto-submit when all 6 digits are entered
-    if (value && index === 5) {
-      const isComplete = newCode.every(digit => digit !== '');
-      if (isComplete && onComplete) {
-        setTimeout(() => {
-          onComplete(newCode.join(''));
-        }, 100);
-      }
-    }
+    onComplete?.(pin);
   };
-
-  const handleBackspace = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !passcode[index] && index > 0) {
-      const prevInput = document.querySelector(`input[data-index="${index - 1}"]`) as HTMLInputElement;
-      if (prevInput) prevInput.focus();
-    }
-  };
-
 
   return (
     <div 
@@ -89,22 +70,22 @@ export const SetPasscode: React.FC<SetPasscodeProps> = ({
               </p>
             </div>
             
-            {/* Passcode Input Fields */}
-            <div className='flex gap-3 justify-center w-full'>
-              {passcode.map((digit, index) => (
-                <input
-                  key={index}
-                  data-index={index}
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleCodeChange(index, e.target.value)}
-                  onKeyDown={(e) => handleBackspace(index, e)}
-                  className='w-12 h-12 text-center text-white text-xl font-semibold bg-[#131519] border border-[#2B2D30] rounded-xl focus:outline-none focus:border-[#40E0D0] transition-colors'
-                />
-              ))}
-            </div>
+            {error && <p className='text-red-500 text-sm text-center' role="alert">{error}</p>}
+
+            <CodeInput
+              ref={codeInputRef}
+              value={passcode}
+              onChange={(digits) => {
+                setPasscode(digits);
+                if (error) setError('');
+              }}
+              onComplete={handleComplete}
+              secret
+              autoFocus
+              invalid={Boolean(error)}
+              ariaLabel={t.onboarding?.setPasscode?.title || 'Set a passcode'}
+              className='flex gap-3 justify-center w-full'
+            />
           </div>
         </div>
 
@@ -112,25 +93,7 @@ export const SetPasscode: React.FC<SetPasscodeProps> = ({
           <div className='flex flex-col gap-2 justify-center items-center pb-4'>
           <div className='flex flex-col gap-4 justify-center items-center mt-4'>
             <div className="w-full max-w-[412px] h-px bg-gradient-to-r from-transparent via-[#2B2D30] to-transparent" />
-            <p className='text-[#636466] text-xs text-center max-w-sm mx-auto px-6'>
-              {t.onboarding?.signUp?.termsText || 'You acknowledge that you have read and agree to'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.termsLink || "Swarp Foundation's Terms"}
-              </a> {t.onboarding?.signUp?.and || 'and'}{' '}
-              <a
-                href="https://www.swarpfoundation.com/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className='text-white underline hover:text-[#40E0D0] transition-colors cursor-pointer'
-              >
-                {t.onboarding?.signUp?.privacyLink || 'Privacy Policy'}
-              </a>.
-            </p>
+            <LegalNotice />
             
             
          

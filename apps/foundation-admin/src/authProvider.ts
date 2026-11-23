@@ -1,46 +1,73 @@
 import type { AuthProvider } from "@refinedev/core";
-import axios from "axios";
+import axios, { isAxiosError } from "axios";
+import { API_URL } from "@/config";
+import {
+  canWrite,
+  clearSession,
+  getCurrentRole,
+  getIdentity,
+  getToken,
+  getTokenState,
+  saveSession,
+} from "@/auth/session";
+import { FORBIDDEN_MESSAGE, UNAUTHORIZED_MESSAGE, getStatusCode } from "@/lib/httpError";
+import { showToast } from "@/notifications/toastStore";
+import { queryClient } from "@/queryClient";
 
-const API_URL = import.meta.env.VITE_ADMIN_API_URL || "http://localhost:3000";
+const loginErrorMessage = (error: unknown): string => {
+  if (isAxiosError(error)) {
+    if (!error.response) return "Unable to reach the admin API. Check your connection and try again.";
+    if (error.response.status === 401 || error.response.status === 403) return "Invalid email or password.";
+    if (error.response.status === 429) return "Too many sign-in attempts. Please wait and try again.";
+    const message = (error.response.data as { message?: unknown } | undefined)?.message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Sign-in failed. Please try again.";
+};
+
+const endSession = () => {
+  clearSession();
+  // Drop cached records and access-control decisions from the previous session.
+  queryClient.removeQueries();
+};
 
 export const authProvider: AuthProvider = {
   login: async ({ email, password }) => {
     try {
-      const response = await axios.post(`${API_URL}/auth/admin-login`, {
-        email,
-        password,
-      });
+      const response = await axios.post(`${API_URL}/auth/admin-login`, { email, password });
+      const token: unknown = response.data?.access_token;
 
-      if (response.data.access_token) {
-        localStorage.setItem("swarp_foundation_admin_token", response.data.access_token);
-        localStorage.setItem("swarp_foundation_admin_user", JSON.stringify(response.data.user));
+      if (typeof token !== "string" || getTokenState(token) !== "valid") {
         return {
-          success: true,
-          redirectTo: "/",
+          success: false,
+          error: { name: "Sign-in failed", message: "The server did not return a valid session token." },
         };
       }
 
+      endSession();
+      saveSession(token, response.data?.user);
+
+      const role = getCurrentRole();
       return {
-        success: false,
-        error: {
-          name: "LoginError",
-          message: "Invalid credentials",
-        },
+        success: true,
+        redirectTo: "/",
+        successNotification: canWrite(role)
+          ? undefined
+          : {
+              message: "Signed in with read-only access",
+              description: "Your account has no admin role, so editing and deleting are disabled.",
+            },
       };
     } catch (error: unknown) {
       return {
         success: false,
-        error: {
-          name: "LoginError",
-          message: (error as { response?: { data?: { message?: string } } })?.response?.data?.message || "Login failed",
-        },
+        error: { name: "Sign-in failed", message: loginErrorMessage(error) },
       };
     }
   },
 
   logout: async () => {
-    localStorage.removeItem("swarp_foundation_admin_token");
-    localStorage.removeItem("swarp_foundation_admin_user");
+    endSession();
     return {
       success: true,
       redirectTo: "/login",
@@ -48,35 +75,53 @@ export const authProvider: AuthProvider = {
   },
 
   check: async () => {
-    const token = localStorage.getItem("swarp_foundation_admin_token");
-    if (token) {
-      return {
-        authenticated: true,
-      };
+    const state = getTokenState(getToken());
+    if (state === "valid") {
+      return { authenticated: true };
     }
 
+    if (state !== "missing") {
+      clearSession();
+    }
     return {
       authenticated: false,
+      logout: state !== "missing",
       redirectTo: "/login",
+      error: state === "expired" ? { name: "Session expired", message: UNAUTHORIZED_MESSAGE } : undefined,
     };
   },
 
-  getPermissions: async () => null,
+  getPermissions: async () => getCurrentRole(),
 
-  getIdentity: async () => {
-    const user = localStorage.getItem("swarp_foundation_admin_user");
-    if (user) {
-      return JSON.parse(user);
-    }
-    return null;
-  },
+  getIdentity: async () => getIdentity(),
 
   onError: async (error) => {
-    if ((error as { response?: { status?: number } })?.response?.status === 401) {
+    const status = getStatusCode(error);
+
+    if (status === 401) {
+      showToast({
+        key: "admin-session-expired",
+        type: "error",
+        message: "Signed out",
+        description: UNAUTHORIZED_MESSAGE,
+      });
       return {
         logout: true,
+        redirectTo: "/login",
+        error: { name: "Session expired", message: UNAUTHORIZED_MESSAGE },
       };
     }
-    return { error };
+
+    if (status === 403) {
+      showToast({
+        key: "admin-forbidden",
+        type: "error",
+        message: "Not permitted",
+        description: FORBIDDEN_MESSAGE,
+      });
+      return {};
+    }
+
+    return {};
   },
 };

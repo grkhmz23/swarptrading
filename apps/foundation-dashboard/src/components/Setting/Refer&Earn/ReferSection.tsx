@@ -5,6 +5,7 @@ import { Copy, Upload } from "lucide-react";
 import RewardItem from "./RewardItem";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 export default function ReferSection() {
   const t = useT();
@@ -15,7 +16,7 @@ export default function ReferSection() {
 useEffect(() => {
   const generateReferral = async () => {
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) return console.error("No token found in localStorage");
 
       // 🔹 Try getting user data from localStorage
@@ -49,7 +50,7 @@ useEffect(() => {
           localStorage.setItem("swarp_fd_user", JSON.stringify(user));
         } else {
           // if user not found, store it separately
-          localStorage.setItem("swarp_fd_referral_code", response.referralCode);
+          localStorage.setItem("swarp_fd_my_referral_code", response.referralCode);
         }
       }
     } catch (err) {

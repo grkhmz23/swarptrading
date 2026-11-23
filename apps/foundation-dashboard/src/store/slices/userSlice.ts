@@ -100,8 +100,8 @@ const userSlice = createSlice({
   name: "user",
   initialState,
   reducers: {
-    clearUser(state) {
-      Object.assign(state, initialState);
+    clearUser() {
+      return initialState;
     },
   },
   extraReducers: (builder) => {

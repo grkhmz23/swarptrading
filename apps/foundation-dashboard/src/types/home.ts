@@ -45,10 +45,20 @@ export interface Transaction {
   status: 'PENDING' | 'CONFIRMED' | 'FAILED';
   timestamp: string;
   errorMessage?: string;
+  /** SPL token transfers carry the mint and, when known, its symbol. Absent for native SOL. */
+  tokenMint?: string;
+  tokenSymbol?: string;
   isMoonPay?: boolean;
   fiatAmount?: number;
   fiatCurrency?: string;
   description?: string;
+}
+
+/** Symbol to show next to a transaction amount. */
+export function transactionSymbol(tx: Pick<Transaction, 'tokenMint' | 'tokenSymbol'>): string {
+  if (tx.tokenSymbol) return tx.tokenSymbol;
+  if (tx.tokenMint) return `${tx.tokenMint.slice(0, 4)}…${tx.tokenMint.slice(-4)}`;
+  return 'SOL';
 }
 
 export interface JupiterToken {
@@ -101,7 +111,7 @@ export interface ConversionRates {
 
 export type TokenFilter = 'all' | 'gainers' | 'losers' | 'volume' | 'new';
 
-export type SectionName = 'Home' | 'Wallet' | 'Trade' | 'Transactions' | 'Rewards' | 'Settings' | 'Swap';
+export type SectionName = 'Home' | 'Wallet' | 'Trade' | 'Transactions' | 'Rewards' | 'Staking' | 'Settings' | 'Launchpad';
 
 export interface NavigationItem {
   key: 'home' | 'wallet' | 'trade' | 'transactions' | 'rewards' | 'settings';
@@ -128,4 +138,13 @@ export interface UserProfile {
   lastName: string;
   email: string;
   profilePictureUrl?: string;
+}
+
+/** One SOL / SPL balance from GET /wallet/:id/swap/tokens/balances. */
+export interface WalletTokenBalance {
+  symbol: string;
+  mint: string;
+  balance: number;
+  formattedBalance: string;
+  usdValue: number;
 }

@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import AddAssetModal from "../AddAssetModal";
 import { apiService, LaunchpadProject } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
+import { errorMessage } from '@/lib/http';
 
 // Helper function to format time ago
 const formatTimeAgo = (dateString: string): string => {
@@ -29,13 +31,16 @@ const formatVolume = (volume: number | string | undefined | null): string => {
   return `$${vol.toFixed(0)}`;
 };
 
-// Helper function to format price
-const formatPrice = (price: string | number): string => {
+// Launchpad project prices are quoted in SOL per token (bonding-curve prices are often tiny,
+// e.g. 5e-8), so show significant digits instead of a fixed number of decimals.
+const formatPrice = (price: string | number | undefined | null): string => {
   const priceNum = typeof price === "string" ? parseFloat(price) : price;
-  if (isNaN(priceNum) || priceNum === 0) return "$0.00";
-  if (priceNum < 0.0001) return `$${priceNum.toExponential(2)}`;
-  if (priceNum < 1) return `$${priceNum.toFixed(6)}`;
-  return `$${priceNum.toFixed(2)}`;
+  if (priceNum === undefined || priceNum === null || !Number.isFinite(priceNum)) return "—";
+  if (priceNum <= 0) return "0 SOL";
+  if (priceNum >= 1) return `${priceNum.toLocaleString("en-US", { maximumFractionDigits: 4 })} SOL`;
+  const rounded = Number(priceNum.toPrecision(4));
+  if (priceNum < 0.0001) return `${rounded.toExponential()} SOL`;
+  return `${String(rounded)} SOL`;
 };
 
 export default function Watchlist() {
@@ -44,12 +49,15 @@ export default function Watchlist() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddAssetModalOpen, setIsAddAssetModalOpen] = useState(false);
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const removingRef = useRef<Set<string>>(new Set());
 
   const fetchWatchlist = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) {
         setError(t.launchpad?.watchlist?.loginRequired || "Please login to view your watchlist");
         setIsLoading(false);
@@ -59,8 +67,7 @@ export default function Watchlist() {
       const response = await apiService.getLaunchpadWatchlist(token);
       setProjects(response.projects || []);
     } catch (err) {
-      console.error("Failed to fetch watchlist:", err);
-      setError(t.launchpad?.watchlist?.failedToLoad || "Failed to load watchlist");
+      setError(errorMessage(err, t.launchpad?.watchlist?.failedToLoad || "Failed to load watchlist"));
     } finally {
       setIsLoading(false);
     }
@@ -85,16 +92,41 @@ export default function Watchlist() {
     fetchWatchlist();
   };
 
-  const handleRemoveFromWatchlist = async (projectId: string) => {
-    try {
-      const token = localStorage.getItem("swarp_fd_access_token");
-      if (!token) return;
+  const handleRemoveFromWatchlist = async (project: LaunchpadProject) => {
+    const projectId = project.id;
+    // The ref blocks a second click before React re-renders the disabled button;
+    // the remove endpoint is a toggle, so a double click would otherwise re-add the project.
+    if (removingRef.current.has(projectId)) return;
 
-      await apiService.toggleLaunchpadWatchlist(projectId, token);
-      // Refresh the watchlist
-      fetchWatchlist();
+    const token = getAccessToken();
+    if (!token) {
+      setRemoveError(t.launchpad?.watchlist?.loginRequired || "Please login to manage your watchlist");
+      return;
+    }
+
+    removingRef.current.add(projectId);
+    setRemovingIds((prev) => new Set(prev).add(projectId));
+    setRemoveError(null);
+    try {
+      let result = await apiService.toggleLaunchpadWatchlist(projectId, token);
+      if (result.isWatching) {
+        // It had already been removed elsewhere, so this toggle re-added it. Undo that.
+        result = await apiService.toggleLaunchpadWatchlist(projectId, token);
+      }
+      if (result.isWatching) {
+        setRemoveError(`Could not remove ${project.name} from your watchlist. Please try again.`);
+        return;
+      }
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
     } catch (err) {
-      console.error("Failed to remove from watchlist:", err);
+      setRemoveError(`Could not remove ${project.name}: ${errorMessage(err, "Request failed")}`);
+    } finally {
+      removingRef.current.delete(projectId);
+      setRemovingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
     }
   };
 
@@ -257,6 +289,35 @@ export default function Watchlist() {
       {/* Table Section */}
       {!isLoading && !error && (
         <div className="flex flex-col !px-7 !py-5">
+          {/* Remove Error */}
+          {removeError && (
+            <div
+              role="alert"
+              className="flex items-start justify-between !gap-3 !px-4 !py-3 !mb-3 rounded-lg"
+              style={{ backgroundColor: "rgba(235, 87, 87, 0.1)" }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Inter Variable', Inter, sans-serif",
+                  fontSize: "14px",
+                  fontWeight: 400,
+                  lineHeight: "1.4em",
+                  color: "#EB5757",
+                }}
+              >
+                {removeError}
+              </span>
+              <button
+                type="button"
+                onClick={() => setRemoveError(null)}
+                aria-label="Dismiss"
+                className="cursor-pointer text-[#EB5757] hover:opacity-70"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {/* Table Header - Desktop */}
           <div
             className="hidden lg:flex items-center !py-3"
@@ -380,9 +441,12 @@ export default function Watchlist() {
                 style={{ borderBottom: index < projects.length - 1 ? "0.2px solid #2B2D30" : "none" }}
               >
                 {/* Star Column */}
-                <div
-                  className="w-[64px] flex items-center cursor-pointer"
-                  onClick={() => handleRemoveFromWatchlist(project.id)}
+                <button
+                  type="button"
+                  aria-label={`Remove ${project.name} from watchlist`}
+                  disabled={removingIds.has(project.id)}
+                  className="w-[64px] flex items-center cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => handleRemoveFromWatchlist(project)}
                 >
                   {/* Filled Star Icon */}
                   <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -391,7 +455,7 @@ export default function Watchlist() {
                       fill="#40E0D0"
                     />
                   </svg>
-                </div>
+                </button>
                 {/* Rank Column */}
                 <div className="w-[56px]">
                   <span
@@ -597,9 +661,12 @@ export default function Watchlist() {
                     </div>
                   </div>
                   {/* Filled Star Icon */}
-                  <div
-                    className="cursor-pointer"
-                    onClick={() => handleRemoveFromWatchlist(project.id)}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${project.name} from watchlist`}
+                    disabled={removingIds.has(project.id)}
+                    className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => handleRemoveFromWatchlist(project)}
                   >
                     <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                       <path
@@ -607,7 +674,7 @@ export default function Watchlist() {
                         fill="#40E0D0"
                       />
                     </svg>
-                  </div>
+                  </button>
                 </div>
 
                 {/* Stats Grid */}

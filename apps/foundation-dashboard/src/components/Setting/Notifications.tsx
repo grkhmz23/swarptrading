@@ -5,6 +5,7 @@ import SettingsTile from "./shared/SettingsTile";
 import ToggleButton from "./shared/ToggleButton";
 import { apiService } from "@/services/api";
 import { useT } from "@/i18n/I18nProvider";
+import { getAccessToken } from '@/lib/session';
 
 interface NotificationPreferences {
   allowNotifications: boolean;
@@ -33,7 +34,7 @@ export default function Notifications() {
   const loadPreferences = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) {
         console.error("No access token found");
         return;
@@ -57,7 +58,7 @@ export default function Notifications() {
 
     try {
       setIsSaving(true);
-      const token = localStorage.getItem("swarp_fd_access_token");
+      const token = getAccessToken();
       if (!token) {
         console.error("No access token found");
         return;

@@ -3,7 +3,7 @@
 import React from 'react';
 import Image from 'next/image';
 import { WalletSidebar } from './WalletSidebar';
-import { WalletData, Transaction } from '@/types/home';
+import { WalletData, Transaction, transactionSymbol } from '@/types/home';
 import type { TranslationKeys } from '@/i18n';
 
 interface UserState {
@@ -36,9 +36,7 @@ interface TransactionsSectionProps {
   transactionsLoading: boolean;
   transactionsError: string | null;
   filterState: FilterState;
-  mainnetBalance: number;
   portfolioValue?: number;
-  isBalanceSyncing: boolean;
   // Handlers
   formatPublicKey: (key: string | null | undefined) => string;
   formatTransactionDate: (timestamp: string) => string;
@@ -51,9 +49,8 @@ interface TransactionsSectionProps {
   handleCopyAddress: () => void;
   handleOpenUsernameModal: () => void;
   handleCloseUsernameCard: () => void;
-  handleBalanceSync: () => void;
   handleTopUpClick: () => void;
-  handleMoonPaySell: () => void;
+  handleWithdraw: () => void;
   setShowSendModal: (show: boolean) => void;
   setShowReceiveModal: (show: boolean) => void;
   setShowSwapModal: (show: boolean) => void;
@@ -68,9 +65,7 @@ export const TransactionsSection: React.FC<TransactionsSectionProps> = ({
   transactionsLoading,
   transactionsError,
   filterState,
-  mainnetBalance,
   portfolioValue,
-  isBalanceSyncing,
   formatPublicKey,
   formatTransactionDate,
   getTransactionIcon,
@@ -82,9 +77,8 @@ export const TransactionsSection: React.FC<TransactionsSectionProps> = ({
   handleCopyAddress,
   handleOpenUsernameModal,
   handleCloseUsernameCard,
-  handleBalanceSync,
   handleTopUpClick,
-  handleMoonPaySell,
+  handleWithdraw,
   setShowSendModal,
   setShowReceiveModal,
   setShowSwapModal,
@@ -173,8 +167,7 @@ export const TransactionsSection: React.FC<TransactionsSectionProps> = ({
                 <span>
                   {filterState.currencyFilter === 'all' ? (filtersT?.currency || 'Currency') :
                    filterState.currencyFilter === 'sol' ? 'SOL' :
-                   filterState.currencyFilter === 'usd' ? 'USD' :
-                   filterState.currencyFilter === 'eur' ? 'EUR' : (filtersT?.currency || 'Currency')}
+                   filterState.currencyFilter === 'tokens' ? 'Tokens' : (filtersT?.currency || 'Currency')}
                 </span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className={`transform transition-transform ${filterState.showCurrencyDropdown ? 'rotate-180' : ''}`}>
                   <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -186,8 +179,7 @@ export const TransactionsSection: React.FC<TransactionsSectionProps> = ({
                   {[
                     { value: 'all', label: filtersT?.all || 'All' },
                     { value: 'sol', label: 'SOL' },
-                    { value: 'usd', label: 'USD' },
-                    { value: 'eur', label: 'EUR' }
+                    { value: 'tokens', label: 'Tokens' }
                   ].map(option => (
                     <button
                       key={option.value}
@@ -378,7 +370,7 @@ export const TransactionsSection: React.FC<TransactionsSectionProps> = ({
                     {/* Center: Amount */}
                     <div className="text-center flex-1">
                       <p className={`text-sm font-semibold ${transaction.type === 'RECEIVE' ? 'text-[#40E0D0]' : 'text-white'}`}>
-                        {transaction.type === 'RECEIVE' ? '+' : '-'}{Number(transaction.amount).toFixed(6)} SOL
+                        {transaction.type === 'RECEIVE' ? '+' : '-'}{Number(transaction.amount).toFixed(6)} {transactionSymbol(transaction)}
                       </p>
                       <p className="text-[#636466] text-xs">
                         {transactionT?.fee || "Fee"}: {Number(transaction.fee).toFixed(6)} SOL
@@ -405,16 +397,13 @@ export const TransactionsSection: React.FC<TransactionsSectionProps> = ({
         wallet={wallet}
         user={user}
         userProfile={userProfile}
-        mainnetBalance={mainnetBalance}
         portfolioValue={portfolioValue}
-        isBalanceSyncing={isBalanceSyncing}
         formatPublicKey={formatPublicKey}
         handleCopyAddress={handleCopyAddress}
         handleOpenUsernameModal={handleOpenUsernameModal}
         handleCloseUsernameCard={handleCloseUsernameCard}
-        handleBalanceSync={handleBalanceSync}
         handleTopUpClick={handleTopUpClick}
-        handleMoonPaySell={handleMoonPaySell}
+        handleWithdraw={handleWithdraw}
         setShowSendModal={setShowSendModal}
         setShowReceiveModal={setShowReceiveModal}
         setShowSwapModal={setShowSwapModal}

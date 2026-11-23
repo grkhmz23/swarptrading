@@ -7,15 +7,16 @@ interface ProgressSectionProps {
   handleVerifyIdentity: () => void;
   verifyLoading?: boolean;
   kycStatus?: 'not_started' | 'pending' | 'approved' | 'declined' | 'resubmission_requested';
-  mainnetBalance?: number;
   hasSwapped?: boolean;
+  /** The wallet holds SOL or tokens. */
+  isWalletFunded?: boolean;
 }
 
 export default function ProgressSection({
   handleVerifyIdentity,
   verifyLoading,
   kycStatus,
-  mainnetBalance = 0,
+  isWalletFunded = false,
   hasSwapped = false,
 }: ProgressSectionProps) {
   const t = useT();
@@ -23,7 +24,7 @@ export default function ProgressSection({
   // Calculate completed steps
   const isAccountCreated = true; // Always done if they're on this page
   const isIdentityVerified = kycStatus === 'approved';
-  const isWalletTopUp = mainnetBalance > 0;
+  const isWalletTopUp = isWalletFunded;
   const isFirstSwap = hasSwapped;
 
   const completedSteps = [isAccountCreated, isIdentityVerified, isWalletTopUp, isFirstSwap].filter(Boolean).length;
